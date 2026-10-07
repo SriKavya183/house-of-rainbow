@@ -130,7 +130,7 @@ function requireAdmin(req, res, next) {
 app.post(
   '/api/admin/upload',
   requireAdmin,
-  upload.array('images', 8),
+  upload.array('images', 4),
   (req, res) => {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({
