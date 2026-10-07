@@ -1,1553 +1,1714 @@
-import { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from "react";
 
-import Navbar from '../../components/Navbar.jsx'
-import Footer from '../../components/Footer.jsx'
-import { formatInr } from '../../context/CartContext.jsx'
+const API = "/api";
 
 const CATEGORIES = [
-  'Earrings',
-  'Hair Accessories',
-  'Hair Clips',
-  'Jewellery',
-  'Bangles',
-  'Gift Hampers',
-]
+  "Earrings",
+  "Hair Accessories",
+  "Hair Clips",
+  "Jewellery",
+  "Bangles",
+  "Gift Hampers",
+];
 
 const emptyProduct = {
-  name: '',
-  category: '',
-  price: '',
-  description: '',
-  image: '',
-  images: [],
-  featured: false,
+  name: "",
+  description: "",
+  price: "",
+  category: "Earrings",
   stock_quantity: 0,
-}
+  featured: false,
+  image: "",
+  images: [],
+};
 
 export default function AdminOrders() {
-  const [password, setPassword] = useState('')
-  const [authed, setAuthed] = useState(false)
+  const [authenticated, setAuthenticated] = useState(false);
+  const [checkingSession, setCheckingSession] = useState(true);
 
-  const [orders, setOrders] = useState([])
-  const [products, setProducts] = useState([])
+  const [loginPassword, setLoginPassword] = useState("");
+  const [loginError, setLoginError] = useState("");
+  const [loggingIn, setLoggingIn] = useState(false);
 
-  const [tab, setTab] = useState('products')
+  const [products, setProducts] = useState([]);
+  const [orders, setOrders] = useState([]);
 
-  const [product, setProduct] = useState(emptyProduct)
-  const [editingId, setEditingId] = useState(null)
+  const [loadingProducts, setLoadingProducts] = useState(false);
+  const [loadingOrders, setLoadingOrders] = useState(false);
 
-  const [imageFiles, setImageFiles] = useState([])
+  const [product, setProduct] = useState(emptyProduct);
+  const [editingId, setEditingId] = useState(null);
 
-  const [error, setError] = useState('')
-  const [message, setMessage] = useState('')
-  const [loading, setLoading] = useState(false)
+  const [imageFiles, setImageFiles] = useState([]);
+  const [imagePreviews, setImagePreviews] = useState([]);
 
-  async function loadSession() {
+  const [savingProduct, setSavingProduct] = useState(false);
+  const [uploadingImages, setUploadingImages] = useState(false);
+
+  const fileInputRef = useRef(null);
+
+  // --------------------------------------------------
+  // CHECK ADMIN SESSION
+  // --------------------------------------------------
+
+  useEffect(() => {
+    checkSession();
+  }, []);
+
+  async function checkSession() {
     try {
-      const res = await fetch('/api/admin/session', {
-        credentials: 'include',
-      })
+      const res = await fetch(`${API}/admin/session`, {
+        credentials: "include",
+      });
 
-      const data = await res.json()
-
-      setAuthed(Boolean(data.authenticated))
-
-      if (data.authenticated) {
-        await Promise.all([
-          loadOrders(),
-          loadProducts(),
-        ])
+      if (res.ok) {
+        const data = await res.json();
+        setAuthenticated(Boolean(data?.authenticated));
       }
-    } catch (err) {
-      console.error(err)
-      setError('Could not connect to the server.')
+    } catch (error) {
+      console.error("Session check failed:", error);
+    } finally {
+      setCheckingSession(false);
     }
   }
 
-  async function loadOrders() {
+  // --------------------------------------------------
+  // LOGIN
+  // --------------------------------------------------
+
+  async function handleLogin(e) {
+    e.preventDefault();
+
+    if (!loginPassword.trim()) {
+      setLoginError("Please enter admin password.");
+      return;
+    }
+
+    setLoggingIn(true);
+    setLoginError("");
+
     try {
-      const res = await fetch('/api/admin/orders', {
-        credentials: 'include',
-      })
+      const res = await fetch(`${API}/admin/login`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        credentials: "include",
+        body: JSON.stringify({
+          password: loginPassword,
+        }),
+      });
+
+      const data = await res.json();
 
       if (!res.ok) {
-        throw new Error('Failed to load orders')
+        throw new Error(data?.error || "Incorrect password.");
       }
 
-      const data = await res.json()
-
-      setOrders(
-        Array.isArray(data)
-          ? data
-          : data.orders || [],
-      )
-    } catch (err) {
-      console.error(err)
-      setError('Could not load orders.')
+      setAuthenticated(true);
+      setLoginPassword("");
+      setLoginError("");
+    } catch (error) {
+      setLoginError(error.message || "Login failed.");
+    } finally {
+      setLoggingIn(false);
     }
   }
+
+  // --------------------------------------------------
+  // LOGOUT
+  // --------------------------------------------------
+
+  async function handleLogout() {
+    try {
+      await fetch(`${API}/admin/logout`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } catch (error) {
+      console.error("Logout failed:", error);
+    }
+
+    setAuthenticated(false);
+  }
+
+  // --------------------------------------------------
+  // LOAD PRODUCTS
+  // --------------------------------------------------
 
   async function loadProducts() {
+    setLoadingProducts(true);
+
     try {
-      const res = await fetch('/api/admin/products', {
-        credentials: 'include',
-      })
+      const res = await fetch(`${API}/products`);
 
       if (!res.ok) {
-        throw new Error('Failed to load products')
+        throw new Error("Failed to load products.");
       }
 
-      const data = await res.json()
+      const data = await res.json();
 
-      setProducts(
-        Array.isArray(data)
-          ? data
-          : data.products || [],
-      )
-    } catch (err) {
-      console.error(err)
-      setError('Could not load products.')
+      const productList = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.products)
+        ? data.products
+        : [];
+
+      setProducts(productList);
+    } catch (error) {
+      console.error("Products loading failed:", error);
+      alert("Unable to load products.");
+    } finally {
+      setLoadingProducts(false);
+    }
+  }
+
+  // --------------------------------------------------
+  // LOAD ORDERS
+  // --------------------------------------------------
+
+  async function loadOrders() {
+    setLoadingOrders(true);
+
+    try {
+      const res = await fetch(`${API}/admin/orders`, {
+        credentials: "include",
+      });
+
+      if (!res.ok) {
+        throw new Error("Failed to load orders.");
+      }
+
+      const data = await res.json();
+
+      const orderList = Array.isArray(data)
+        ? data
+        : Array.isArray(data?.orders)
+        ? data.orders
+        : [];
+
+      setOrders(orderList);
+    } catch (error) {
+      console.error("Orders loading failed:", error);
+      alert("Unable to load orders.");
+    } finally {
+      setLoadingOrders(false);
     }
   }
 
   useEffect(() => {
-    loadSession()
-  }, [])
+    if (!authenticated) return;
 
-  async function login(event) {
-    event.preventDefault()
+    loadProducts();
+    loadOrders();
+  }, [authenticated]);
 
-    setError('')
-    setMessage('')
-    setLoading(true)
+  // --------------------------------------------------
+  // PRODUCT FORM
+  // --------------------------------------------------
 
-    try {
-      const res = await fetch('/api/admin/login', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        credentials: 'include',
-        body: JSON.stringify({
-          password,
-        }),
-      })
+  function handleProductChange(e) {
+    const { name, value, type, checked } = e.target;
 
-      const data = await res.json()
+    setProduct((prev) => ({
+      ...prev,
+      [name]: type === "checkbox" ? checked : value,
+    }));
+  }
 
-      if (!res.ok) {
-        throw new Error(
-          data.error || 'Invalid password',
-        )
+  // --------------------------------------------------
+  // IMAGE SELECTION - ONE BY ONE
+  // --------------------------------------------------
+
+  function handleImageChange(e) {
+    const files = Array.from(e.target.files || []);
+
+    if (!files.length) return;
+
+    const currentCount = imageFiles.length;
+    const remainingSlots = 4 - currentCount;
+
+    if (remainingSlots <= 0) {
+      alert("Maximum 4 images allowed.");
+      e.target.value = "";
+      return;
+    }
+
+    if (files.length > remainingSlots) {
+      alert(
+        `You can add only ${remainingSlots} more image${
+          remainingSlots > 1 ? "s" : ""
+        }. Maximum 4 images allowed.`
+      );
+
+      e.target.value = "";
+      return;
+    }
+
+    const validFiles = [];
+
+    for (const file of files) {
+      if (!["image/jpeg", "image/png", "image/webp"].includes(file.type)) {
+        alert(`${file.name} is not a JPG, PNG, or WEBP image.`);
+        continue;
       }
 
-      setAuthed(true)
-      setPassword('')
-      setMessage('Login successful.')
+      if (file.size > 5 * 1024 * 1024) {
+        alert(`${file.name} is larger than 5MB.`);
+        continue;
+      }
 
-      await Promise.all([
-        loadOrders(),
-        loadProducts(),
-      ])
-    } catch (err) {
-      setError(err.message || 'Login failed.')
-    } finally {
-      setLoading(false)
-    }
-  }
-
-  async function logout() {
-    try {
-      await fetch('/api/admin/logout', {
-        method: 'POST',
-        credentials: 'include',
-      })
-    } catch (err) {
-      console.error(err)
+      validFiles.push(file);
     }
 
-    setAuthed(false)
-    setOrders([])
-    setProducts([])
-    setMessage('')
-  }
-
-  function updateField(event) {
-    const {
-      name,
-      value,
-      type,
-      checked,
-    } = event.target
-
-    setProduct((current) => ({
-      ...current,
-      [name]:
-        type === 'checkbox'
-          ? checked
-          : value,
-    }))
-  }
-
-  function handleImageChange(event) {
-    const files = Array.from(
-      event.target.files || [],
-    )
-
-    if (files.length > 4) {
-      setError(
-        'Maximum 4 images are allowed.',
-      )
-      event.target.value = ''
-      setImageFiles([])
-      return
+    if (!validFiles.length) {
+      e.target.value = "";
+      return;
     }
 
-    const invalid = files.find(
-      (file) =>
-        ![
-          'image/jpeg',
-          'image/png',
-          'image/webp',
-        ].includes(file.type) ||
-        file.size > 5 * 1024 * 1024,
-    )
+    setImageFiles((prev) => [...prev, ...validFiles]);
 
-    if (invalid) {
-      setError(
-        'Only JPG, PNG or WEBP images up to 5MB are allowed.',
-      )
-      event.target.value = ''
-      setImageFiles([])
-      return
-    }
+    const newPreviews = validFiles.map((file) => ({
+      type: "new",
+      url: URL.createObjectURL(file),
+      file,
+    }));
 
-    setError('')
-    setImageFiles(files)
+    setImagePreviews((prev) => [...prev, ...newPreviews]);
+
+    // Allows selecting another image after this one
+    e.target.value = "";
   }
 
-  function resetProductForm() {
-    setProduct({
-      ...emptyProduct,
-      images: [],
-    })
+  // --------------------------------------------------
+  // REMOVE NEW IMAGE
+  // --------------------------------------------------
 
-    setEditingId(null)
-    setImageFiles([])
+  function removeNewImage(index) {
+    setImageFiles((prev) => prev.filter((_, i) => i !== index));
 
-    const input =
-      document.getElementById(
-        'product-images',
-      )
+    setImagePreviews((prev) => {
+      const removed = prev[index];
 
-    if (input) {
-      input.value = ''
-    }
+      if (removed?.type === "new" && removed.url) {
+        URL.revokeObjectURL(removed.url);
+      }
+
+      return prev.filter((_, i) => i !== index);
+    });
   }
 
-  function editProduct(item) {
-    const existingImages =
-      Array.isArray(item.images)
-        ? item.images.slice(0, 4)
-        : item.image
-          ? [item.image]
-          : []
+  // --------------------------------------------------
+  // EDIT PRODUCT
+  // --------------------------------------------------
 
-    setEditingId(item.id)
+  function startEdit(productItem) {
+    const existingImages = Array.isArray(productItem?.images)
+      ? productItem.images
+      : productItem?.images
+      ? parseImages(productItem.images)
+      : productItem?.image
+      ? [productItem.image]
+      : [];
+
+    const limitedImages = existingImages.filter(Boolean).slice(0, 4);
+
+    setEditingId(productItem.id);
 
     setProduct({
-      name: item.name || '',
-      category: item.category || '',
-      price:
-        item.price_paise != null
-          ? Number(item.price_paise) / 100
-          : item.price != null
-            ? item.price
-            : '',
-      description: item.description || '',
-      image: item.image || '',
-      images: existingImages,
-      featured: Boolean(item.featured),
-      stock_quantity:
-        item.stock_quantity ?? 0,
-    })
+      name: productItem.name || "",
+      description: productItem.description || "",
+      price: productItem.price ?? "",
+      category: productItem.category || "Earrings",
+      stock_quantity: productItem.stock_quantity ?? 0,
+      featured: Boolean(productItem.featured),
+      image: productItem.image || limitedImages[0] || "",
+      images: limitedImages,
+    });
 
-    setImageFiles([])
-    setError('')
-    setMessage('')
-    setTab('products')
+    setImageFiles([]);
+
+    setImagePreviews(
+      limitedImages.map((url) => ({
+        type: "existing",
+        url,
+      }))
+    );
 
     window.scrollTo({
       top: 0,
-      behavior: 'smooth',
-    })
+      behavior: "smooth",
+    });
   }
+
+  // --------------------------------------------------
+  // CANCEL EDIT
+  // --------------------------------------------------
+
+  function cancelEdit() {
+    clearProductForm();
+  }
+
+  // --------------------------------------------------
+  // CLEAR PRODUCT FORM
+  // --------------------------------------------------
+
+  function clearProductForm() {
+    imagePreviews.forEach((item) => {
+      if (item.type === "new" && item.url) {
+        URL.revokeObjectURL(item.url);
+      }
+    });
+
+    setEditingId(null);
+    setProduct(emptyProduct);
+    setImageFiles([]);
+    setImagePreviews([]);
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+    }
+  }
+
+  // --------------------------------------------------
+  // UPLOAD IMAGES
+  // --------------------------------------------------
 
   async function uploadProductImages() {
     if (!imageFiles.length) {
-      return product.images || []
+      return [];
     }
 
     if (imageFiles.length > 4) {
-      throw new Error(
-        'Maximum 4 images are allowed.',
-      )
+      throw new Error("Maximum 4 images are allowed.");
     }
 
-    const formData = new FormData()
-
-    imageFiles.forEach((file) => {
-      formData.append('images', file)
-    })
-
-    const res = await fetch(
-      '/api/admin/upload',
-      {
-        method: 'POST',
-        credentials: 'include',
-        body: formData,
-      },
-    )
-
-    const data = await res.json()
-
-    if (!res.ok) {
-      throw new Error(
-        data.error || 'Image upload failed.',
-      )
-    }
-
-    return Array.isArray(data.images)
-      ? data.images.slice(0, 4)
-      : []
-  }
-
-  async function saveProduct(event) {
-    event.preventDefault()
-
-    setError('')
-    setMessage('')
-    setLoading(true)
+    setUploadingImages(true);
 
     try {
-      if (!product.name.trim()) {
-        throw new Error(
-          'Product name is required.',
-        )
+      const formData = new FormData();
+
+      imageFiles.forEach((file) => {
+        formData.append("images", file);
+      });
+
+      const res = await fetch(`${API}/admin/upload`, {
+        method: "POST",
+        credentials: "include",
+        body: formData,
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Image upload failed.");
       }
 
-      if (!product.category) {
-        throw new Error(
-          'Please select a category.',
-        )
-      }
+      return Array.isArray(data?.images) ? data.images : [];
+    } finally {
+      setUploadingImages(false);
+    }
+  }
 
-      const price = Number(product.price)
+  // --------------------------------------------------
+  // SAVE PRODUCT
+  // --------------------------------------------------
 
-      if (
-        !Number.isFinite(price) ||
-        price <= 0
-      ) {
-        throw new Error(
-          'Please enter a valid price.',
-        )
-      }
+  async function saveProduct(e) {
+    e.preventDefault();
 
-      if (imageFiles.length > 4) {
-        throw new Error(
-          'Maximum 4 images are allowed.',
-        )
-      }
+    if (!product.name.trim()) {
+      alert("Please enter product name.");
+      return;
+    }
 
-      let images = product.images || []
+    if (!product.price || Number(product.price) <= 0) {
+      alert("Please enter a valid price.");
+      return;
+    }
 
-      if (imageFiles.length > 0) {
-        images = await uploadProductImages()
-      }
+    if (!product.category) {
+      alert("Please select a category.");
+      return;
+    }
 
-      images = images.slice(0, 4)
+    if (Number(product.stock_quantity) < 0) {
+      alert("Stock quantity cannot be negative.");
+      return;
+    }
 
-      const mainImage =
-        images[0] ||
-        product.image ||
-        ''
+    if (imagePreviews.length > 4) {
+      alert("Maximum 4 images allowed.");
+      return;
+    }
+
+    setSavingProduct(true);
+
+    try {
+      // Upload newly selected images
+      const uploadedImages = await uploadProductImages();
+
+      // Keep existing images + uploaded images
+      const existingImages = imagePreviews
+        .filter((item) => item.type === "existing")
+        .map((item) => item.url);
+
+      const finalImages = [...existingImages, ...uploadedImages].slice(0, 4);
 
       const payload = {
         name: product.name.trim(),
+        description: product.description.trim(),
+        price: Number(product.price),
         category: product.category,
-        price_paise: Math.round(
-          price * 100,
-        ),
-        description:
-          product.description.trim(),
-        image: mainImage,
-        images,
-        featured: Boolean(
-          product.featured,
-        ),
-        stock_quantity: Math.max(
-          0,
-          Number(
-            product.stock_quantity,
-          ) || 0,
-        ),
-      }
+        stock_quantity: Number(product.stock_quantity) || 0,
+        featured: Boolean(product.featured),
+        image: finalImages[0] || "",
+        images: finalImages,
+      };
 
       const url = editingId
-        ? `/api/admin/products/${editingId}`
-        : '/api/admin/products'
+        ? `${API}/admin/products/${editingId}`
+        : `${API}/admin/products`;
 
-      const method = editingId
-        ? 'PUT'
-        : 'POST'
+      const method = editingId ? "PUT" : "POST";
 
       const res = await fetch(url, {
         method,
+        credentials: "include",
         headers: {
-          'Content-Type':
-            'application/json',
+          "Content-Type": "application/json",
         },
-        credentials: 'include',
         body: JSON.stringify(payload),
-      })
+      });
 
-      const data = await res.json()
+      const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(
-          data.error ||
-            'Could not save product.',
-        )
+        throw new Error(data?.error || "Failed to save product.");
       }
 
-      setMessage(
-        editingId
-          ? 'Product updated successfully.'
-          : 'Product added successfully.',
-      )
+      alert(editingId ? "Product updated successfully." : "Product added successfully.");
 
-      resetProductForm()
-      await loadProducts()
-    } catch (err) {
-      console.error(err)
-      setError(
-        err.message ||
-          'Could not save product.',
-      )
+      clearProductForm();
+      await loadProducts();
+    } catch (error) {
+      console.error("Save product error:", error);
+      alert(error.message || "Unable to save product.");
     } finally {
-      setLoading(false)
+      setSavingProduct(false);
     }
   }
 
-  async function deleteProduct(id) {
+  // --------------------------------------------------
+  // DELETE PRODUCT
+  // --------------------------------------------------
+
+  async function deleteProduct(productId) {
     const confirmed = window.confirm(
-      'Are you sure you want to delete this product?',
-    )
+      "Are you sure you want to delete this product?"
+    );
 
-    if (!confirmed) {
-      return
-    }
-
-    setError('')
-    setMessage('')
+    if (!confirmed) return;
 
     try {
-      const res = await fetch(
-        `/api/admin/products/${id}`,
-        {
-          method: 'DELETE',
-          credentials: 'include',
-        },
-      )
+      const res = await fetch(`${API}/admin/products/${productId}`, {
+        method: "DELETE",
+        credentials: "include",
+      });
 
-      const data = await res.json()
+      const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(
-          data.error ||
-            'Could not delete product.',
-        )
+        throw new Error(data?.error || "Failed to delete product.");
       }
 
-      setMessage(
-        'Product deleted successfully.',
-      )
+      alert("Product deleted successfully.");
 
-      if (editingId === id) {
-        resetProductForm()
+      if (editingId === productId) {
+        clearProductForm();
       }
 
-      await loadProducts()
-    } catch (err) {
-      console.error(err)
-      setError(
-        err.message ||
-          'Could not delete product.',
-      )
+      await loadProducts();
+    } catch (error) {
+      console.error("Delete product error:", error);
+      alert(error.message || "Unable to delete product.");
     }
   }
 
-  async function updateStock(id, stock) {
-    try {
-      const res = await fetch(
-        `/api/admin/products/${id}`,
-        {
-          method: 'PUT',
-          headers: {
-            'Content-Type':
-              'application/json',
-          },
-          credentials: 'include',
-          body: JSON.stringify({
-            stock_quantity: Math.max(
-              0,
-              Number(stock) || 0,
-            ),
-          }),
-        },
-      )
+  // --------------------------------------------------
+  // UPDATE STOCK
+  // --------------------------------------------------
 
-      const data = await res.json()
+  async function updateStock(productItem, value) {
+    const stock = Math.max(0, Number(value) || 0);
+
+    try {
+      const res = await fetch(`${API}/admin/products/${productItem.id}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          ...productItem,
+          stock_quantity: stock,
+          images: parseImages(productItem.images),
+        }),
+      });
+
+      const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(
-          data.error ||
-            'Could not update stock.',
-        )
+        throw new Error(data?.error || "Failed to update stock.");
       }
 
-      await loadProducts()
-    } catch (err) {
-      console.error(err)
-      setError(
-        err.message ||
-          'Could not update stock.',
-      )
+      await loadProducts();
+    } catch (error) {
+      console.error("Stock update error:", error);
+      alert(error.message || "Unable to update stock.");
     }
   }
 
-  async function refundOrder(id) {
+  // --------------------------------------------------
+  // UPDATE ORDER STATUS
+  // --------------------------------------------------
+
+  async function updateOrderStatus(orderId, status) {
+    try {
+      const res = await fetch(`${API}/admin/orders/${orderId}`, {
+        method: "PUT",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          status,
+        }),
+      });
+
+      const data = await res.json();
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Failed to update order.");
+      }
+
+      await loadOrders();
+    } catch (error) {
+      console.error("Order update error:", error);
+      alert(error.message || "Unable to update order.");
+    }
+  }
+
+  // --------------------------------------------------
+  // REFUND ORDER
+  // --------------------------------------------------
+
+  async function refundOrder(orderId) {
     const confirmed = window.confirm(
-      'Are you sure you want to refund this order?',
-    )
+      "Are you sure you want to refund this order?"
+    );
 
-    if (!confirmed) {
-      return
-    }
-
-    setError('')
-    setMessage('')
+    if (!confirmed) return;
 
     try {
-      const res = await fetch(
-        `/api/admin/orders/${id}/refund`,
-        {
-          method: 'POST',
-          credentials: 'include',
+      const res = await fetch(`${API}/admin/orders/${orderId}/refund`, {
+        method: "POST",
+        credentials: "include",
+        headers: {
+          "Content-Type": "application/json",
         },
-      )
+      });
 
-      const data = await res.json()
+      const data = await res.json();
 
       if (!res.ok) {
-        throw new Error(
-          data.error || 'Refund failed.',
-        )
+        throw new Error(data?.error || "Refund failed.");
       }
 
-      setMessage(
-        'Refund request completed.',
-      )
+      alert("Refund request completed.");
 
-      await loadOrders()
-    } catch (err) {
-      console.error(err)
-      setError(
-        err.message || 'Refund failed.',
-      )
+      await loadOrders();
+    } catch (error) {
+      console.error("Refund error:", error);
+      alert(error.message || "Unable to process refund.");
     }
   }
 
-  function getImage(item) {
-    if (item.image) {
-      return item.image
+  // --------------------------------------------------
+  // HELPERS
+  // --------------------------------------------------
+
+  function parseImages(value) {
+    if (Array.isArray(value)) {
+      return value.filter(Boolean);
     }
 
-    if (
-      Array.isArray(item.images) &&
-      item.images.length
-    ) {
-      return item.images[0]
+    if (!value) {
+      return [];
     }
 
-    return ''
+    try {
+      const parsed = JSON.parse(value);
+
+      if (Array.isArray(parsed)) {
+        return parsed.filter(Boolean);
+      }
+    } catch {
+      // Ignore invalid JSON
+    }
+
+    return typeof value === "string" ? [value] : [];
   }
 
-  function getOrderAmount(order) {
-    if (
-      order.amount_paise != null
-    ) {
-      return Number(
-        order.amount_paise,
-      )
+  function formatDate(value) {
+    if (!value) return "-";
+
+    const date = new Date(value);
+
+    if (Number.isNaN(date.getTime())) {
+      return String(value);
     }
 
-    if (order.amount != null) {
-      return Number(order.amount)
-    }
-
-    return 0
+    return date.toLocaleString("en-IN");
   }
 
-  if (!authed) {
+  function productImage(productItem) {
+    const images = parseImages(productItem?.images);
+
+    return images[0] || productItem?.image || "";
+  }
+
+  // --------------------------------------------------
+  // LOGIN SCREEN
+  // --------------------------------------------------
+
+  if (checkingSession) {
     return (
-      <>
-        <Navbar />
+      <div style={styles.centerPage}>
+        <div style={styles.loadingText}>Checking admin session...</div>
+      </div>
+    );
+  }
 
-        <main className="section">
-          <div
-            className="container"
-            style={{
-              maxWidth: '480px',
-            }}
+  if (!authenticated) {
+    return (
+      <div style={styles.loginPage}>
+        <form onSubmit={handleLogin} style={styles.loginCard}>
+          <div style={styles.logoCircle}>HR</div>
+
+          <h1 style={styles.loginTitle}>House of Rainbow</h1>
+
+          <p style={styles.loginSubtitle}>Admin Panel</p>
+
+          <input
+            type="password"
+            placeholder="Admin Password"
+            value={loginPassword}
+            onChange={(e) => setLoginPassword(e.target.value)}
+            style={styles.input}
+          />
+
+          {loginError && (
+            <div style={styles.errorBox}>
+              {loginError}
+            </div>
+          )}
+
+          <button
+            type="submit"
+            disabled={loggingIn}
+            style={styles.primaryButton}
           >
-            <div
-              className="card"
-              style={{
-                padding: '32px',
-              }}
-            >
-              <p className="admin-eyebrow">
-                HOUSE OF RAINBOW
+            {loggingIn ? "Logging in..." : "Login"}
+          </button>
+        </form>
+      </div>
+    );
+  }
+
+  // --------------------------------------------------
+  // ADMIN PANEL
+  // --------------------------------------------------
+
+  return (
+    <div style={styles.page}>
+      {/* HEADER */}
+      <header style={styles.header}>
+        <div>
+          <h1 style={styles.headerTitle}>House of Rainbow</h1>
+          <p style={styles.headerSubtitle}>Admin Dashboard</p>
+        </div>
+
+        <button onClick={handleLogout} style={styles.logoutButton}>
+          Logout
+        </button>
+      </header>
+
+      <main style={styles.container}>
+        {/* ------------------------------------------ */}
+        {/* PRODUCT FORM */}
+        {/* ------------------------------------------ */}
+
+        <section style={styles.card}>
+          <div style={styles.sectionHeader}>
+            <div>
+              <h2 style={styles.sectionTitle}>
+                {editingId ? "Edit Product" : "Add New Product"}
+              </h2>
+
+              <p style={styles.sectionSubtitle}>
+                Add product details, category, stock and images.
               </p>
+            </div>
 
-              <h1>Admin Login</h1>
+            {editingId && (
+              <button onClick={cancelEdit} style={styles.secondaryButton}>
+                Cancel Edit
+              </button>
+            )}
+          </div>
 
-              <p>
-                Login to manage products,
-                inventory and orders.
-              </p>
+          <form onSubmit={saveProduct}>
+            <div style={styles.formGrid}>
+              {/* PRODUCT NAME */}
+              <div style={styles.field}>
+                <label style={styles.label}>Product Name</label>
 
-              {error && (
-                <div className="admin-alert error">
-                  {error}
+                <input
+                  type="text"
+                  name="name"
+                  value={product.name}
+                  onChange={handleProductChange}
+                  placeholder="Enter product name"
+                  style={styles.input}
+                />
+              </div>
+
+              {/* PRICE */}
+              <div style={styles.field}>
+                <label style={styles.label}>Price</label>
+
+                <input
+                  type="number"
+                  name="price"
+                  value={product.price}
+                  onChange={handleProductChange}
+                  placeholder="₹"
+                  min="0"
+                  step="0.01"
+                  style={styles.input}
+                />
+              </div>
+
+              {/* CATEGORY */}
+              <div style={styles.field}>
+                <label style={styles.label}>Category</label>
+
+                <select
+                  name="category"
+                  value={product.category}
+                  onChange={handleProductChange}
+                  style={styles.input}
+                >
+                  {CATEGORIES.map((category) => (
+                    <option key={category} value={category}>
+                      {category}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* STOCK */}
+              <div style={styles.field}>
+                <label style={styles.label}>Stock Quantity</label>
+
+                <input
+                  type="number"
+                  name="stock_quantity"
+                  value={product.stock_quantity}
+                  onChange={handleProductChange}
+                  min="0"
+                  style={styles.input}
+                />
+              </div>
+            </div>
+
+            {/* DESCRIPTION */}
+            <div style={styles.field}>
+              <label style={styles.label}>Description</label>
+
+              <textarea
+                name="description"
+                value={product.description}
+                onChange={handleProductChange}
+                placeholder="Enter product description"
+                rows={4}
+                style={{
+                  ...styles.input,
+                  resize: "vertical",
+                }}
+              />
+            </div>
+
+            {/* FEATURED */}
+            <label style={styles.checkboxRow}>
+              <input
+                type="checkbox"
+                name="featured"
+                checked={product.featured}
+                onChange={handleProductChange}
+              />
+
+              <span>Show this product as Featured</span>
+            </label>
+
+            {/* IMAGE UPLOAD */}
+            <div style={styles.imageSection}>
+              <div style={styles.imageHeader}>
+                <div>
+                  <h3 style={styles.imageTitle}>Product Images</h3>
+
+                  <p style={styles.imageHelp}>
+                    Add images one by one. Maximum 4 images.
+                  </p>
+                </div>
+
+                <span style={styles.imageCount}>
+                  {imagePreviews.length}/4
+                </span>
+              </div>
+
+              {/* PREVIEWS */}
+              {imagePreviews.length > 0 && (
+                <div style={styles.previewGrid}>
+                  {imagePreviews.map((item, index) => (
+                    <div key={`${item.url}-${index}`} style={styles.previewCard}>
+                      <img
+                        src={item.url}
+                        alt={`Product ${index + 1}`}
+                        style={styles.previewImage}
+                      />
+
+                      <div style={styles.previewFooter}>
+                        <span style={styles.previewNumber}>
+                          Image {index + 1}
+                        </span>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (item.type === "existing") {
+                              setImagePreviews((prev) =>
+                                prev.filter((_, i) => i !== index)
+                              );
+                            } else {
+                              const newIndex = imagePreviews
+                                .slice(0, index + 1)
+                                .filter((x) => x.type === "new").length - 1;
+
+                              removeNewImage(newIndex);
+                            }
+                          }}
+                          style={styles.removeButton}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </div>
+                  ))}
                 </div>
               )}
 
-              <form
-                onSubmit={login}
-                className="form"
-              >
-                <label>
-                  Admin Password
-
+              {/* ADD IMAGE BUTTON */}
+              {imagePreviews.length < 4 && (
+                <div style={styles.uploadBox}>
                   <input
-                    type="password"
-                    value={password}
-                    onChange={(event) =>
-                      setPassword(
-                        event.target.value,
-                      )
-                    }
-                    placeholder="Enter admin password"
-                    required
+                    ref={fileInputRef}
+                    type="file"
+                    accept="image/jpeg,image/png,image/webp"
+                    multiple={false}
+                    onChange={handleImageChange}
+                    style={{ display: "none" }}
+                    id="product-image-upload"
                   />
-                </label>
 
-                <button
-                  className="gold-btn"
-                  type="submit"
-                  disabled={loading}
-                >
-                  {loading
-                    ? 'Logging in...'
-                    : 'Login'}
-                </button>
-              </form>
-            </div>
-          </div>
-        </main>
-
-        <Footer />
-      </>
-    )
-  }
-
-  return (
-    <>
-      <Navbar />
-
-      <main className="section admin-page">
-        <div className="container">
-          <div className="admin-header">
-            <div>
-              <p className="admin-eyebrow">
-                HOUSE OF RAINBOW
-              </p>
-
-              <h1>Admin Dashboard</h1>
-
-              <p>
-                Manage products, inventory
-                and customer orders.
-              </p>
-            </div>
-
-            <button
-              className="ghost-btn"
-              type="button"
-              onClick={logout}
-            >
-              Logout
-            </button>
-          </div>
-
-          {error && (
-            <div className="admin-alert error">
-              {error}
-            </div>
-          )}
-
-          {message && (
-            <div className="admin-alert success">
-              {message}
-            </div>
-          )}
-
-          <div className="admin-tabs">
-            <button
-              type="button"
-              className={
-                tab === 'products'
-                  ? 'admin-tab active'
-                  : 'admin-tab'
-              }
-              onClick={() =>
-                setTab('products')
-              }
-            >
-              Products
-            </button>
-
-            <button
-              type="button"
-              className={
-                tab === 'orders'
-                  ? 'admin-tab active'
-                  : 'admin-tab'
-              }
-              onClick={() =>
-                setTab('orders')
-              }
-            >
-              Orders
-            </button>
-          </div>
-
-          {tab === 'products' && (
-            <>
-              <section className="admin-card">
-                <div className="admin-card-header">
-                  <div>
-                    <h2>
-                      {editingId
-                        ? 'Edit Product'
-                        : 'Add New Product'}
-                    </h2>
-
-                    <p>
-                      Add product details,
-                      category and up to 4
-                      images.
-                    </p>
-                  </div>
-
-                  {editingId && (
-                    <button
-                      type="button"
-                      className="ghost-btn"
-                      onClick={
-                        resetProductForm
-                      }
-                    >
-                      Cancel Edit
-                    </button>
-                  )}
-                </div>
-
-                <form
-                  onSubmit={saveProduct}
-                  className="admin-product-form"
-                >
-                  <div className="admin-form-grid">
-                    <label>
-                      Product Name
-
-                      <input
-                        name="name"
-                        value={product.name}
-                        onChange={
-                          updateField
-                        }
-                        placeholder="Example: Korean Earrings"
-                        required
-                      />
-                    </label>
-
-                    <label>
-                      Category
-
-                      <select
-                        name="category"
-                        value={
-                          product.category
-                        }
-                        onChange={
-                          updateField
-                        }
-                        required
-                      >
-                        <option value="">
-                          Select Category
-                        </option>
-
-                        {CATEGORIES.map(
-                          (category) => (
-                            <option
-                              key={category}
-                              value={category}
-                            >
-                              {category}
-                            </option>
-                          ),
-                        )}
-                      </select>
-                    </label>
-
-                    <label>
-                      Price (₹)
-
-                      <input
-                        name="price"
-                        type="number"
-                        min="1"
-                        step="0.01"
-                        value={product.price}
-                        onChange={
-                          updateField
-                        }
-                        placeholder="299"
-                        required
-                      />
-                    </label>
-
-                    <label>
-                      Stock Quantity
-
-                      <input
-                        name="stock_quantity"
-                        type="number"
-                        min="0"
-                        value={
-                          product.stock_quantity
-                        }
-                        onChange={
-                          updateField
-                        }
-                        placeholder="10"
-                      />
-                    </label>
-                  </div>
-
-                  <label>
-                    Product Images
-
-                    <input
-                      id="product-images"
-                      type="file"
-                      accept="image/jpeg,image/png,image/webp"
-                      multiple
-                      onChange={
-                        handleImageChange
-                      }
-                    />
-
-                    <small>
-                      Add 1 to 4 images.
-                      JPG, PNG or WEBP,
-                      maximum 5MB each.
-                    </small>
+                  <label
+                    htmlFor="product-image-upload"
+                    style={styles.uploadButton}
+                  >
+                    + Add Image
                   </label>
 
-                  {imageFiles.length >
-                    0 && (
-                    <div className="image-preview-grid">
-                      {imageFiles.map(
-                        (file) => (
-                          <div
-                            className="image-preview"
-                            key={`${file.name}-${file.size}`}
-                          >
-                            <img
-                              src={URL.createObjectURL(
-                                file,
-                              )}
-                              alt={file.name}
-                            />
-                          </div>
-                        ),
-                      )}
-                    </div>
-                  )}
+                  <p style={styles.uploadText}>
+                    Select one image at a time
+                  </p>
 
-                  {product.images
-                    ?.length > 0 &&
-                    imageFiles.length ===
-                      0 && (
-                      <div className="image-preview-grid">
-                        {product.images.map(
-                          (
-                            image,
-                            index,
-                          ) => (
-                            <div
-                              className="image-preview"
-                              key={`${image}-${index}`}
-                            >
-                              <img
-                                src={image}
-                                alt={`${product.name} ${
-                                  index + 1
-                                }`}
-                              />
+                  <p style={styles.uploadSubText}>
+                    JPG, PNG or WEBP • Maximum 5MB each
+                  </p>
+                </div>
+              )}
+
+              {imagePreviews.length === 4 && (
+                <div style={styles.maxImagesBox}>
+                  ✓ Maximum 4 images added
+                </div>
+              )}
+            </div>
+
+            {/* SAVE */}
+            <div style={styles.formActions}>
+              <button
+                type="submit"
+                disabled={savingProduct || uploadingImages}
+                style={styles.primaryButton}
+              >
+                {savingProduct || uploadingImages
+                  ? "Saving..."
+                  : editingId
+                  ? "Update Product"
+                  : "Add Product"}
+              </button>
+
+              {editingId && (
+                <button
+                  type="button"
+                  onClick={cancelEdit}
+                  style={styles.secondaryButton}
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </form>
+        </section>
+
+        {/* ------------------------------------------ */}
+        {/* PRODUCTS */}
+        {/* ------------------------------------------ */}
+
+        <section style={styles.card}>
+          <div style={styles.sectionHeader}>
+            <div>
+              <h2 style={styles.sectionTitle}>Products</h2>
+              <p style={styles.sectionSubtitle}>
+                Manage your House of Rainbow products.
+              </p>
+            </div>
+
+            <button
+              onClick={loadProducts}
+              style={styles.secondaryButton}
+            >
+              Refresh
+            </button>
+          </div>
+
+          {loadingProducts ? (
+            <div style={styles.emptyState}>Loading products...</div>
+          ) : products.length === 0 ? (
+            <div style={styles.emptyState}>
+              No products found.
+            </div>
+          ) : (
+            <div style={styles.tableWrapper}>
+              <table style={styles.table}>
+                <thead>
+                  <tr>
+                    <th style={styles.th}>Product</th>
+                    <th style={styles.th}>Category</th>
+                    <th style={styles.th}>Price</th>
+                    <th style={styles.th}>Stock</th>
+                    <th style={styles.th}>Featured</th>
+                    <th style={styles.th}>Actions</th>
+                  </tr>
+                </thead>
+
+                <tbody>
+                  {products.map((item) => (
+                    <tr key={item.id}>
+                      <td style={styles.td}>
+                        <div style={styles.productCell}>
+                          {productImage(item) ? (
+                            <img
+                              src={productImage(item)}
+                              alt={item.name}
+                              style={styles.productThumb}
+                            />
+                          ) : (
+                            <div style={styles.noImage}>
+                              No Image
                             </div>
-                          ),
+                          )}
+
+                          <span>{item.name}</span>
+                        </div>
+                      </td>
+
+                      <td style={styles.td}>
+                        {item.category || "-"}
+                      </td>
+
+                      <td style={styles.td}>
+                        ₹{Number(item.price || 0).toFixed(2)}
+                      </td>
+
+                      <td style={styles.td}>
+                        <input
+                          type="number"
+                          min="0"
+                          defaultValue={item.stock_quantity || 0}
+                          onBlur={(e) =>
+                            updateStock(item, e.target.value)
+                          }
+                          style={styles.stockInput}
+                        />
+                      </td>
+
+                      <td style={styles.td}>
+                        {item.featured ? "Yes" : "No"}
+                      </td>
+
+                      <td style={styles.td}>
+                        <div style={styles.actionRow}>
+                          <button
+                            onClick={() => startEdit(item)}
+                            style={styles.editButton}
+                          >
+                            Edit
+                          </button>
+
+                          <button
+                            onClick={() => deleteProduct(item.id)}
+                            style={styles.deleteButton}
+                          >
+                            Delete
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+
+        {/* ------------------------------------------ */}
+        {/* ORDERS */}
+        {/* ------------------------------------------ */}
+
+        <section style={styles.card}>
+          <div style={styles.sectionHeader}>
+            <div>
+              <h2 style={styles.sectionTitle}>Orders</h2>
+
+              <p style={styles.sectionSubtitle}>
+                Manage customer orders and refunds.
+              </p>
+            </div>
+
+            <button
+              onClick={loadOrders}
+              style={styles.secondaryButton}
+            >
+              Refresh
+            </button>
+          </div>
+
+          {loadingOrders ? (
+            <div style={styles.emptyState}>Loading orders...</div>
+          ) : orders.length === 0 ? (
+            <div style={styles.emptyState}>
+              No orders found.
+            </div>
+          ) : (
+            <div style={styles.ordersList}>
+              {orders.map((order) => (
+                <div key={order.id} style={styles.orderCard}>
+                  <div style={styles.orderTop}>
+                    <div>
+                      <h3 style={styles.orderTitle}>
+                        Order #{order.id}
+                      </h3>
+
+                      <p style={styles.orderDate}>
+                        {formatDate(
+                          order.created_at || order.createdAt
                         )}
+                      </p>
+                    </div>
+
+                    <strong style={styles.orderAmount}>
+                      ₹
+                      {Number(
+                        order.total_amount ||
+                          order.amount ||
+                          0
+                      ).toFixed(2)}
+                    </strong>
+                  </div>
+
+                  <div style={styles.orderDetails}>
+                    {order.customer_name && (
+                      <div>
+                        <strong>Customer:</strong>{" "}
+                        {order.customer_name}
                       </div>
                     )}
 
-                  <label>
-                    Description
+                    {order.customer_phone && (
+                      <div>
+                        <strong>Phone:</strong>{" "}
+                        {order.customer_phone}
+                      </div>
+                    )}
 
-                    <textarea
-                      name="description"
-                      value={
-                        product.description
-                      }
-                      onChange={
-                        updateField
-                      }
-                      placeholder="Write a short product description..."
-                      rows="5"
-                    />
-                  </label>
+                    {order.customer_email && (
+                      <div>
+                        <strong>Email:</strong>{" "}
+                        {order.customer_email}
+                      </div>
+                    )}
 
-                  <label className="admin-checkbox">
-                    <input
-                      type="checkbox"
-                      name="featured"
-                      checked={
-                        product.featured
-                      }
-                      onChange={
-                        updateField
-                      }
-                    />
+                    {order.address && (
+                      <div>
+                        <strong>Address:</strong>{" "}
+                        {order.address}
+                      </div>
+                    )}
+                  </div>
 
-                    <span>
-                      Show this product as
-                      Featured
-                    </span>
-                  </label>
-
-                  <div className="admin-form-actions">
-                    <button
-                      type="submit"
-                      className="gold-btn"
-                      disabled={loading}
+                  <div style={styles.orderActions}>
+                    <select
+                      value={order.status || "pending"}
+                      onChange={(e) =>
+                        updateOrderStatus(
+                          order.id,
+                          e.target.value
+                        )
+                      }
+                      style={styles.statusSelect}
                     >
-                      {loading
-                        ? 'Saving...'
-                        : editingId
-                          ? 'Update Product'
-                          : 'Add Product'}
-                    </button>
+                      <option value="pending">Pending</option>
+                      <option value="confirmed">Confirmed</option>
+                      <option value="processing">Processing</option>
+                      <option value="shipped">Shipped</option>
+                      <option value="delivered">Delivered</option>
+                      <option value="cancelled">Cancelled</option>
+                      <option value="refunded">Refunded</option>
+                    </select>
 
-                    <button
-                      type="button"
-                      className="ghost-btn"
-                      onClick={
-                        resetProductForm
-                      }
-                    >
-                      Clear
-                    </button>
-                  </div>
-                </form>
-              </section>
-
-              <section className="admin-card">
-                <div className="admin-card-header">
-                  <div>
-                    <h2>
-                      Product Inventory
-                    </h2>
-
-                    <p>
-                      {products.length}{' '}
-                      products in your
-                      store.
-                    </p>
+                    {order.status !== "refunded" && (
+                      <button
+                        onClick={() => refundOrder(order.id)}
+                        style={styles.refundButton}
+                      >
+                        Refund
+                      </button>
+                    )}
                   </div>
                 </div>
-
-                {products.length ===
-                0 ? (
-                  <div className="admin-empty">
-                    No products found.
-                  </div>
-                ) : (
-                  <div className="table-wrap">
-                    <table>
-                      <thead>
-                        <tr>
-                          <th>
-                            Product
-                          </th>
-                          <th>
-                            Category
-                          </th>
-                          <th>Price</th>
-                          <th>Stock</th>
-                          <th>
-                            Featured
-                          </th>
-                          <th>
-                            Actions
-                          </th>
-                        </tr>
-                      </thead>
-
-                      <tbody>
-                        {products.map(
-                          (item) => (
-                            <tr
-                              key={item.id}
-                            >
-                              <td>
-                                <div className="admin-product-cell">
-                                  {getImage(
-                                    item,
-                                  ) ? (
-                                    <img
-                                      src={getImage(
-                                        item,
-                                      )}
-                                      alt={
-                                        item.name
-                                      }
-                                    />
-                                  ) : (
-                                    <div className="admin-no-image">
-                                      No image
-                                    </div>
-                                  )}
-
-                                  <strong>
-                                    {
-                                      item.name
-                                    }
-                                  </strong>
-                                </div>
-                              </td>
-
-                              <td>
-                                <span className="badge">
-                                  {item.category ||
-                                    '—'}
-                                </span>
-                              </td>
-
-                              <td>
-                                {formatInr(
-                                  item.price_paise ||
-                                    Number(
-                                      item.price ||
-                                        0,
-                                    ) *
-                                      100,
-                                )}
-                              </td>
-
-                              <td>
-                                <input
-                                  className="stock-input"
-                                  type="number"
-                                  min="0"
-                                  value={
-                                    item.stock_quantity ??
-                                    0
-                                  }
-                                  onChange={(
-                                    event,
-                                  ) =>
-                                    setProducts(
-                                      (
-                                        current,
-                                      ) =>
-                                        current.map(
-                                          (
-                                            productItem,
-                                          ) =>
-                                            productItem.id ===
-                                            item.id
-                                              ? {
-                                                  ...productItem,
-                                                  stock_quantity:
-                                                    event
-                                                      .target
-                                                      .value,
-                                                }
-                                              : productItem,
-                                        ),
-                                    )
-                                  }
-                                  onBlur={(
-                                    event,
-                                  ) =>
-                                    updateStock(
-                                      item.id,
-                                      event
-                                        .target
-                                        .value,
-                                    )
-                                  }
-                                />
-                              </td>
-
-                              <td>
-                                {item.featured
-                                  ? 'Yes'
-                                  : 'No'}
-                              </td>
-
-                              <td>
-                                <div className="admin-action-buttons">
-                                  <button
-                                    type="button"
-                                    className="ghost-btn small"
-                                    onClick={() =>
-                                      editProduct(
-                                        item,
-                                      )
-                                    }
-                                  >
-                                    Edit
-                                  </button>
-
-                                  <button
-                                    type="button"
-                                    className="danger-btn"
-                                    onClick={() =>
-                                      deleteProduct(
-                                        item.id,
-                                      )
-                                    }
-                                  >
-                                    Delete
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          ),
-                        )}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </section>
-            </>
+              ))}
+            </div>
           )}
-
-          {tab === 'orders' && (
-            <section className="admin-card">
-              <div className="admin-card-header">
-                <div>
-                  <h2>
-                    Orders & Payments
-                  </h2>
-
-                  <p>
-                    View customer orders
-                    and payment details.
-                  </p>
-                </div>
-              </div>
-
-              {orders.length ===
-              0 ? (
-                <div className="admin-empty">
-                  No orders found.
-                </div>
-              ) : (
-                <div className="table-wrap">
-                  <table>
-                    <thead>
-                      <tr>
-                        <th>
-                          Order ID
-                        </th>
-                        <th>
-                          Customer
-                        </th>
-                        <th>Amount</th>
-                        <th>Status</th>
-                        <th>Payment</th>
-                        <th>Action</th>
-                      </tr>
-                    </thead>
-
-                    <tbody>
-                      {orders.map(
-                        (order) => (
-                          <tr
-                            key={order.id}
-                          >
-                            <td>
-                              <strong>
-                                {order.order_id ||
-                                  order.id}
-                              </strong>
-                            </td>
-
-                            <td>
-                              <div>
-                                {order.customer_name ||
-                                  order.name ||
-                                  '—'}
-                              </div>
-
-                              <small>
-                                {order.customer_email ||
-                                  order.email ||
-                                  ''}
-                              </small>
-                            </td>
-
-                            <td>
-                              {formatInr(
-                                getOrderAmount(
-                                  order,
-                                ),
-                              )}
-                            </td>
-
-                            <td>
-                              <span className="badge">
-                                {order.status ||
-                                  '—'}
-                              </span>
-                            </td>
-
-                            <td>
-                              {order.payment_status ||
-                                order.paymentStatus ||
-                                '—'}
-                            </td>
-
-                            <td>
-                              <button
-                                type="button"
-                                className="danger-btn"
-                                onClick={() =>
-                                  refundOrder(
-                                    order.id,
-                                  )
-                                }
-                                disabled={
-                                  order.status ===
-                                    'refunded' ||
-                                  order.payment_status ===
-                                    'refunded'
-                                }
-                              >
-                                Refund
-                              </button>
-                            </td>
-                          </tr>
-                        ),
-                      )}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-            </section>
-          )}
-        </div>
+        </section>
       </main>
-
-      <Footer />
-
-      <style>{`
-        .admin-page {
-          min-height: 80vh;
-          background: #f8f4ec;
-        }
-
-        .admin-header {
-          display: flex;
-          justify-content: space-between;
-          align-items: flex-start;
-          gap: 24px;
-          margin-bottom: 28px;
-        }
-
-        .admin-header h1 {
-          margin: 0 0 8px;
-        }
-
-        .admin-eyebrow {
-          margin: 0 0 8px;
-          font-size: 11px;
-          letter-spacing: 3px;
-          font-weight: 700;
-        }
-
-        .admin-alert {
-          padding: 13px 16px;
-          border-radius: 10px;
-          margin-bottom: 18px;
-          font-size: 14px;
-        }
-
-        .admin-alert.error {
-          background: #fff0f0;
-          border: 1px solid #efcaca;
-          color: #9b3333;
-        }
-
-        .admin-alert.success {
-          background: #effaf1;
-          border: 1px solid #c9e8cf;
-          color: #28713a;
-        }
-
-        .admin-tabs {
-          display: flex;
-          gap: 8px;
-          margin-bottom: 22px;
-          border-bottom: 1px solid #e4ddd2;
-        }
-
-        .admin-tab {
-          border: 0;
-          background: transparent;
-          padding: 13px 20px;
-          cursor: pointer;
-          color: #6b5b70;
-          font-weight: 600;
-        }
-
-        .admin-tab.active {
-          color: #453453;
-          border-bottom: 2px solid #b28a3b;
-        }
-
-        .admin-card {
-          background: #fffdf9;
-          border: 1px solid #e8e0d5;
-          border-radius: 18px;
-          padding: 26px;
-          margin-bottom: 24px;
-          box-shadow: 0 8px 30px rgba(69, 52, 83, 0.06);
-        }
-
-        .admin-card-header {
-          display: flex;
-          justify-content: space-between;
-          gap: 20px;
-          align-items: flex-start;
-          margin-bottom: 22px;
-        }
-
-        .admin-card-header h2 {
-          margin: 0 0 6px;
-        }
-
-        .admin-card-header p {
-          margin: 0;
-          color: #756979;
-        }
-
-        .admin-product-form {
-          display: flex;
-          flex-direction: column;
-          gap: 18px;
-        }
-
-        .admin-form-grid {
-          display: grid;
-          grid-template-columns: repeat(2, minmax(0, 1fr));
-          gap: 18px;
-        }
-
-        .admin-product-form label {
-          display: flex;
-          flex-direction: column;
-          gap: 7px;
-          font-weight: 600;
-          color: #453453;
-        }
-
-        .admin-product-form input,
-        .admin-product-form select,
-        .admin-product-form textarea {
-          width: 100%;
-          box-sizing: border-box;
-          border: 1px solid #ddd2c4;
-          border-radius: 10px;
-          padding: 12px 13px;
-          background: white;
-          color: #453453;
-          font: inherit;
-        }
-
-        .admin-product-form input:focus,
-        .admin-product-form select:focus,
-        .admin-product-form textarea:focus {
-          outline: none;
-          border-color: #b28a3b;
-          box-shadow: 0 0 0 3px rgba(178, 138, 59, 0.1);
-        }
-
-        .admin-product-form small {
-          color: #7b6e7e;
-          font-weight: 400;
-        }
-
-        .admin-checkbox {
-          flex-direction: row !important;
-          align-items: center;
-          gap: 10px !important;
-        }
-
-        .admin-checkbox input {
-          width: auto;
-        }
-
-        .admin-form-actions {
-          display: flex;
-          gap: 10px;
-          flex-wrap: wrap;
-        }
-
-        .admin-action-buttons {
-          display: flex;
-          gap: 7px;
-          flex-wrap: wrap;
-        }
-
-        .ghost-btn.small,
-        .danger-btn {
-          padding: 8px 12px;
-          font-size: 12px;
-        }
-
-        .danger-btn {
-          border: 1px solid #e4bcbc;
-          background: #fff5f5;
-          color: #a33a3a;
-          border-radius: 8px;
-          cursor: pointer;
-        }
-
-        .danger-btn:disabled {
-          opacity: 0.5;
-          cursor: not-allowed;
-        }
-
-        .image-preview-grid {
-          display: grid;
-          grid-template-columns: repeat(4, 1fr);
-          gap: 12px;
-          max-width: 520px;
-        }
-
-        .image-preview {
-          aspect-ratio: 1;
-          border-radius: 10px;
-          overflow: hidden;
-          background: #f2eee8;
-          border: 1px solid #e6ddd2;
-        }
-
-        .image-preview img {
-          width: 100%;
-          height: 100%;
-          object-fit: cover;
-        }
-
-        .admin-product-cell {
-          display: flex;
-          align-items: center;
-          gap: 10px;
-          min-width: 220px;
-        }
-
-        .admin-product-cell img,
-        .admin-no-image {
-          width: 52px;
-          height: 52px;
-          border-radius: 8px;
-          object-fit: cover;
-          flex-shrink: 0;
-        }
-
-        .admin-no-image {
-          display: grid;
-          place-items: center;
-          background: #eee8df;
-          color: #8a7d8c;
-          font-size: 10px;
-        }
-
-        .stock-input {
-          width: 70px;
-          padding: 7px;
-          border: 1px solid #ddd2c4;
-          border-radius: 7px;
-        }
-
-        .admin-empty {
-          padding: 40px;
-          text-align: center;
-          color: #786c7c;
-        }
-
-        @media (max-width: 800px) {
-          .admin-header,
-          .admin-card-header {
-            flex-direction: column;
-          }
-
-          .admin-form-grid {
-            grid-template-columns: 1fr;
-          }
-
-          .image-preview-grid {
-            grid-template-columns: repeat(2, 1fr);
-            max-width: 100%;
-          }
-
-          .admin-card {
-            padding: 18px;
-          }
-
-          .table-wrap {
-            overflow-x: auto;
-          }
-        }
-      `}</style>
-    </>
-  )
+    </div>
+  );
 }
+
+// ==================================================
+// STYLES
+// ==================================================
+
+const styles = {
+  page: {
+    minHeight: "100vh",
+    background: "#faf7f2",
+    color: "#292329",
+  },
+
+  centerPage: {
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "#faf7f2",
+  },
+
+  loadingText: {
+    fontSize: "16px",
+    color: "#6f6370",
+  },
+
+  loginPage: {
+    minHeight: "100vh",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    padding: "24px",
+    background:
+      "linear-gradient(135deg, #faf5ec 0%, #f0e8f8 100%)",
+  },
+
+  loginCard: {
+    width: "100%",
+    maxWidth: "420px",
+    background: "#ffffff",
+    borderRadius: "22px",
+    padding: "40px",
+    boxShadow: "0 20px 60px rgba(70, 50, 70, 0.12)",
+    textAlign: "center",
+  },
+
+  logoCircle: {
+    width: "64px",
+    height: "64px",
+    borderRadius: "50%",
+    margin: "0 auto 18px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    background: "#eadcf3",
+    color: "#6b4d76",
+    fontWeight: "700",
+    fontSize: "20px",
+  },
+
+  loginTitle: {
+    margin: 0,
+    fontSize: "27px",
+    fontWeight: "700",
+  },
+
+  loginSubtitle: {
+    margin: "8px 0 28px",
+    color: "#7b6f7c",
+  },
+
+  header: {
+    background: "#ffffff",
+    borderBottom: "1px solid #eee5ed",
+    padding: "18px 28px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "20px",
+  },
+
+  headerTitle: {
+    margin: 0,
+    fontSize: "24px",
+  },
+
+  headerSubtitle: {
+    margin: "4px 0 0",
+    color: "#807482",
+    fontSize: "14px",
+  },
+
+  logoutButton: {
+    border: "1px solid #ddd0df",
+    background: "#ffffff",
+    color: "#6d536f",
+    padding: "10px 18px",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontWeight: "600",
+  },
+
+  container: {
+    maxWidth: "1250px",
+    margin: "0 auto",
+    padding: "28px 18px 60px",
+  },
+
+  card: {
+    background: "#ffffff",
+    borderRadius: "18px",
+    padding: "24px",
+    marginBottom: "24px",
+    boxShadow: "0 8px 30px rgba(70, 50, 70, 0.06)",
+    border: "1px solid #eee7ef",
+  },
+
+  sectionHeader: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "20px",
+    marginBottom: "24px",
+  },
+
+  sectionTitle: {
+    margin: 0,
+    fontSize: "21px",
+  },
+
+  sectionSubtitle: {
+    margin: "6px 0 0",
+    color: "#827783",
+    fontSize: "14px",
+  },
+
+  formGrid: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fit, minmax(220px, 1fr))",
+    gap: "18px",
+  },
+
+  field: {
+    marginBottom: "18px",
+  },
+
+  label: {
+    display: "block",
+    fontWeight: "600",
+    marginBottom: "7px",
+    fontSize: "14px",
+  },
+
+  input: {
+    width: "100%",
+    boxSizing: "border-box",
+    border: "1px solid #ded5df",
+    borderRadius: "10px",
+    padding: "12px 13px",
+    fontSize: "14px",
+    outline: "none",
+    background: "#fff",
+  },
+
+  checkboxRow: {
+    display: "flex",
+    alignItems: "center",
+    gap: "9px",
+    marginBottom: "24px",
+    fontSize: "14px",
+    cursor: "pointer",
+  },
+
+  imageSection: {
+    marginTop: "10px",
+    padding: "20px",
+    borderRadius: "14px",
+    background: "#fbf8fc",
+    border: "1px solid #eee4f0",
+  },
+
+  imageHeader: {
+    display: "flex",
+    justifyContent: "space-between",
+    alignItems: "center",
+    gap: "15px",
+    marginBottom: "18px",
+  },
+
+  imageTitle: {
+    margin: 0,
+    fontSize: "17px",
+  },
+
+  imageHelp: {
+    margin: "5px 0 0",
+    fontSize: "13px",
+    color: "#817583",
+  },
+
+  imageCount: {
+    minWidth: "42px",
+    height: "42px",
+    borderRadius: "50%",
+    background: "#eadcf3",
+    color: "#674c72",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontWeight: "700",
+  },
+
+  previewGrid: {
+    display: "grid",
+    gridTemplateColumns:
+      "repeat(auto-fill, minmax(150px, 1fr))",
+    gap: "14px",
+    marginBottom: "18px",
+  },
+
+  previewCard: {
+    background: "#ffffff",
+    border: "1px solid #e4dce7",
+    borderRadius: "12px",
+    overflow: "hidden",
+  },
+
+  previewImage: {
+    width: "100%",
+    height: "150px",
+    objectFit: "cover",
+    display: "block",
+  },
+
+  previewFooter: {
+    padding: "9px",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "8px",
+  },
+
+  previewNumber: {
+    fontSize: "12px",
+    color: "#706474",
+  },
+
+  removeButton: {
+    border: "none",
+    background: "#f4e7ed",
+    color: "#8a4f62",
+    padding: "6px 8px",
+    borderRadius: "7px",
+    fontSize: "11px",
+    cursor: "pointer",
+  },
+
+  uploadBox: {
+    border: "1.5px dashed #cbb9d1",
+    borderRadius: "12px",
+    padding: "25px",
+    textAlign: "center",
+    background: "#ffffff",
+  },
+
+  uploadButton: {
+    display: "inline-block",
+    background: "#6d5277",
+    color: "#ffffff",
+    padding: "11px 20px",
+    borderRadius: "9px",
+    cursor: "pointer",
+    fontWeight: "600",
+    fontSize: "14px",
+  },
+
+  uploadText: {
+    margin: "12px 0 4px",
+    fontSize: "13px",
+    color: "#665b68",
+  },
+
+  uploadSubText: {
+    margin: 0,
+    fontSize: "11px",
+    color: "#99909b",
+  },
+
+  maxImagesBox: {
+    padding: "12px",
+    borderRadius: "10px",
+    background: "#edf7f0",
+    color: "#42704d",
+    textAlign: "center",
+    fontSize: "13px",
+    fontWeight: "600",
+  },
+
+  formActions: {
+    display: "flex",
+    gap: "10px",
+    marginTop: "24px",
+  },
+
+  primaryButton: {
+    border: "none",
+    background: "#6d5277",
+    color: "#ffffff",
+    padding: "12px 22px",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontWeight: "600",
+  },
+
+  secondaryButton: {
+    border: "1px solid #d8cbdc",
+    background: "#ffffff",
+    color: "#624e68",
+    padding: "11px 18px",
+    borderRadius: "10px",
+    cursor: "pointer",
+    fontWeight: "600",
+  },
+
+  errorBox: {
+    background: "#f8e9ed",
+    color: "#91485d",
+    borderRadius: "9px",
+    padding: "10px",
+    marginBottom: "14px",
+    fontSize: "13px",
+  },
+
+  emptyState: {
+    padding: "35px",
+    textAlign: "center",
+    color: "#887d88",
+  },
+
+  tableWrapper: {
+    overflowX: "auto",
+  },
+
+  table: {
+    width: "100%",
+    borderCollapse: "collapse",
+    minWidth: "850px",
+  },
+
+  th: {
+    textAlign: "left",
+    padding: "13px",
+    borderBottom: "1px solid #eee6ef",
+    fontSize: "13px",
+    color: "#756a76",
+    whiteSpace: "nowrap",
+  },
+
+  td: {
+    padding: "13px",
+    borderBottom: "1px solid #f1ebf2",
+    fontSize: "13px",
+    verticalAlign: "middle",
+  },
+
+  productCell: {
+    display: "flex",
+    alignItems: "center",
+    gap: "10px",
+    minWidth: "210px",
+    fontWeight: "600",
+  },
+
+  productThumb: {
+    width: "50px",
+    height: "50px",
+    objectFit: "cover",
+    borderRadius: "8px",
+    border: "1px solid #e5dce7",
+  },
+
+  noImage: {
+    width: "50px",
+    height: "50px",
+    borderRadius: "8px",
+    background: "#f2edf3",
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "center",
+    fontSize: "9px",
+    color: "#897d8b",
+  },
+
+  stockInput: {
+    width: "75px",
+    padding: "8px",
+    border: "1px solid #ded5df",
+    borderRadius: "8px",
+  },
+
+  actionRow: {
+    display: "flex",
+    gap: "7px",
+  },
+
+  editButton: {
+    border: "none",
+    background: "#eee4f4",
+    color: "#654c70",
+    padding: "8px 11px",
+    borderRadius: "7px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "600",
+  },
+
+  deleteButton: {
+    border: "none",
+    background: "#f7e8ec",
+    color: "#914d60",
+    padding: "8px 11px",
+    borderRadius: "7px",
+    cursor: "pointer",
+    fontSize: "12px",
+    fontWeight: "600",
+  },
+
+  ordersList: {
+    display: "grid",
+    gap: "15px",
+  },
+
+  orderCard: {
+    border: "1px solid #ece5ed",
+    borderRadius: "14px",
+    padding: "18px",
+    background: "#fff",
+  },
+
+  orderTop: {
+    display: "flex",
+    alignItems: "center",
+    justifyContent: "space-between",
+    gap: "15px",
+    marginBottom: "15px",
+  },
+
+  orderTitle: {
+    margin: 0,
+    fontSize: "16px",
+  },
+
+  orderDate: {
+    margin: "5px 0 0",
+    color: "#8b808c",
+    fontSize: "12px",
+  },
+
+  orderAmount: {
+    fontSize: "17px",
+    color: "#654b6d",
+  },
+
+  orderDetails: {
+    display: "grid",
+    gap: "7px",
+    color: "#5f5661",
+    fontSize: "13px",
+    marginBottom: "16px",
+  },
+
+  orderActions: {
+    display: "flex",
+    gap: "10px",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+
+  statusSelect: {
+    padding: "9px 11px",
+    border: "1px solid #ded5df",
+    borderRadius: "8px",
+    background: "#ffffff",
+  },
+
+  refundButton: {
+    border: "none",
+    background: "#f3e5e9",
+    color: "#8a4d5d",
+    padding: "9px 15px",
+    borderRadius: "8px",
+    cursor: "pointer",
+    fontWeight: "600",
+  },
+};
