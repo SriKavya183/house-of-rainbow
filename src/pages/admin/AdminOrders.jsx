@@ -53,7 +53,10 @@ export default function AdminOrders() {
       setAuthed(Boolean(data.authenticated))
 
       if (data.authenticated) {
-        await Promise.all([loadOrders(), loadProducts()])
+        await Promise.all([
+          loadOrders(),
+          loadProducts(),
+        ])
       }
     } catch (err) {
       console.error(err)
@@ -73,7 +76,11 @@ export default function AdminOrders() {
 
       const data = await res.json()
 
-      setOrders(Array.isArray(data) ? data : data.orders || [])
+      setOrders(
+        Array.isArray(data)
+          ? data
+          : data.orders || [],
+      )
     } catch (err) {
       console.error(err)
       setError('Could not load orders.')
@@ -92,7 +99,11 @@ export default function AdminOrders() {
 
       const data = await res.json()
 
-      setProducts(Array.isArray(data) ? data : data.products || [])
+      setProducts(
+        Array.isArray(data)
+          ? data
+          : data.products || [],
+      )
     } catch (err) {
       console.error(err)
       setError('Could not load products.')
@@ -125,14 +136,19 @@ export default function AdminOrders() {
       const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.error || 'Invalid password')
+        throw new Error(
+          data.error || 'Invalid password',
+        )
       }
 
       setAuthed(true)
       setPassword('')
       setMessage('Login successful.')
 
-      await Promise.all([loadOrders(), loadProducts()])
+      await Promise.all([
+        loadOrders(),
+        loadProducts(),
+      ])
     } catch (err) {
       setError(err.message || 'Login failed.')
     } finally {
@@ -157,19 +173,31 @@ export default function AdminOrders() {
   }
 
   function updateField(event) {
-    const { name, value, type, checked } = event.target
+    const {
+      name,
+      value,
+      type,
+      checked,
+    } = event.target
 
     setProduct((current) => ({
       ...current,
-      [name]: type === 'checkbox' ? checked : value,
+      [name]:
+        type === 'checkbox'
+          ? checked
+          : value,
     }))
   }
 
   function handleImageChange(event) {
-    const files = Array.from(event.target.files || [])
+    const files = Array.from(
+      event.target.files || [],
+    )
 
-    if (files.length > 8) {
-      setError('You can select maximum 8 images.')
+    if (files.length > 4) {
+      setError(
+        'Maximum 4 images are allowed.',
+      )
       event.target.value = ''
       setImageFiles([])
       return
@@ -177,12 +205,18 @@ export default function AdminOrders() {
 
     const invalid = files.find(
       (file) =>
-        !['image/jpeg', 'image/png', 'image/webp'].includes(file.type) ||
+        ![
+          'image/jpeg',
+          'image/png',
+          'image/webp',
+        ].includes(file.type) ||
         file.size > 5 * 1024 * 1024,
     )
 
     if (invalid) {
-      setError('Only JPG, PNG or WEBP images up to 5MB are allowed.')
+      setError(
+        'Only JPG, PNG or WEBP images up to 5MB are allowed.',
+      )
       event.target.value = ''
       setImageFiles([])
       return
@@ -193,11 +227,18 @@ export default function AdminOrders() {
   }
 
   function resetProductForm() {
-    setProduct(emptyProduct)
+    setProduct({
+      ...emptyProduct,
+      images: [],
+    })
+
     setEditingId(null)
     setImageFiles([])
 
-    const input = document.getElementById('product-images')
+    const input =
+      document.getElementById(
+        'product-images',
+      )
 
     if (input) {
       input.value = ''
@@ -205,6 +246,13 @@ export default function AdminOrders() {
   }
 
   function editProduct(item) {
+    const existingImages =
+      Array.isArray(item.images)
+        ? item.images.slice(0, 4)
+        : item.image
+          ? [item.image]
+          : []
+
     setEditingId(item.id)
 
     setProduct({
@@ -218,13 +266,10 @@ export default function AdminOrders() {
             : '',
       description: item.description || '',
       image: item.image || '',
-      images: Array.isArray(item.images)
-        ? item.images
-        : item.image
-          ? [item.image]
-          : [],
+      images: existingImages,
       featured: Boolean(item.featured),
-      stock_quantity: item.stock_quantity ?? 0,
+      stock_quantity:
+        item.stock_quantity ?? 0,
     })
 
     setImageFiles([])
@@ -243,25 +288,38 @@ export default function AdminOrders() {
       return product.images || []
     }
 
+    if (imageFiles.length > 4) {
+      throw new Error(
+        'Maximum 4 images are allowed.',
+      )
+    }
+
     const formData = new FormData()
 
     imageFiles.forEach((file) => {
       formData.append('images', file)
     })
 
-    const res = await fetch('/api/admin/upload', {
-      method: 'POST',
-      credentials: 'include',
-      body: formData,
-    })
+    const res = await fetch(
+      '/api/admin/upload',
+      {
+        method: 'POST',
+        credentials: 'include',
+        body: formData,
+      },
+    )
 
     const data = await res.json()
 
     if (!res.ok) {
-      throw new Error(data.error || 'Image upload failed.')
+      throw new Error(
+        data.error || 'Image upload failed.',
+      )
     }
 
-    return Array.isArray(data.images) ? data.images : []
+    return Array.isArray(data.images)
+      ? data.images.slice(0, 4)
+      : []
   }
 
   async function saveProduct(event) {
@@ -273,52 +331,65 @@ export default function AdminOrders() {
 
     try {
       if (!product.name.trim()) {
-        throw new Error('Product name is required.')
+        throw new Error(
+          'Product name is required.',
+        )
       }
 
       if (!product.category) {
-        throw new Error('Please select a category.')
+        throw new Error(
+          'Please select a category.',
+        )
       }
 
       const price = Number(product.price)
 
-      if (!Number.isFinite(price) || price <= 0) {
-        throw new Error('Please enter a valid price.')
+      if (
+        !Number.isFinite(price) ||
+        price <= 0
+      ) {
+        throw new Error(
+          'Please enter a valid price.',
+        )
+      }
+
+      if (imageFiles.length > 4) {
+        throw new Error(
+          'Maximum 4 images are allowed.',
+        )
       }
 
       let images = product.images || []
 
-      if (imageFiles.length) {
-        if (imageFiles.length < 4 || imageFiles.length > 8) {
-          throw new Error(
-            'Please select minimum 4 and maximum 8 images.',
-          )
-        }
-
+      if (imageFiles.length > 0) {
         images = await uploadProductImages()
-      } else if (!editingId && images.length < 4) {
-        throw new Error(
-          'New products require minimum 4 images.',
-        )
       }
 
-      if (!images.length && !product.image) {
-        throw new Error('Please add product images.')
-      }
+      images = images.slice(0, 4)
 
-      const mainImage = images[0] || product.image || ''
+      const mainImage =
+        images[0] ||
+        product.image ||
+        ''
 
       const payload = {
         name: product.name.trim(),
         category: product.category,
-        price_paise: Math.round(price * 100),
-        description: product.description.trim(),
+        price_paise: Math.round(
+          price * 100,
+        ),
+        description:
+          product.description.trim(),
         image: mainImage,
         images,
-        featured: Boolean(product.featured),
+        featured: Boolean(
+          product.featured,
+        ),
         stock_quantity: Math.max(
           0,
-          Number(product.stock_quantity) || 0,
+          Number(
+            product.stock_quantity,
+          ) || 0,
         ),
       }
 
@@ -326,12 +397,15 @@ export default function AdminOrders() {
         ? `/api/admin/products/${editingId}`
         : '/api/admin/products'
 
-      const method = editingId ? 'PUT' : 'POST'
+      const method = editingId
+        ? 'PUT'
+        : 'POST'
 
       const res = await fetch(url, {
         method,
         headers: {
-          'Content-Type': 'application/json',
+          'Content-Type':
+            'application/json',
         },
         credentials: 'include',
         body: JSON.stringify(payload),
@@ -340,7 +414,10 @@ export default function AdminOrders() {
       const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.error || 'Could not save product.')
+        throw new Error(
+          data.error ||
+            'Could not save product.',
+        )
       }
 
       setMessage(
@@ -353,7 +430,10 @@ export default function AdminOrders() {
       await loadProducts()
     } catch (err) {
       console.error(err)
-      setError(err.message || 'Could not save product.')
+      setError(
+        err.message ||
+          'Could not save product.',
+      )
     } finally {
       setLoading(false)
     }
@@ -372,18 +452,26 @@ export default function AdminOrders() {
     setMessage('')
 
     try {
-      const res = await fetch(`/api/admin/products/${id}`, {
-        method: 'DELETE',
-        credentials: 'include',
-      })
+      const res = await fetch(
+        `/api/admin/products/${id}`,
+        {
+          method: 'DELETE',
+          credentials: 'include',
+        },
+      )
 
       const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.error || 'Could not delete product.')
+        throw new Error(
+          data.error ||
+            'Could not delete product.',
+        )
       }
 
-      setMessage('Product deleted successfully.')
+      setMessage(
+        'Product deleted successfully.',
+      )
 
       if (editingId === id) {
         resetProductForm()
@@ -392,33 +480,49 @@ export default function AdminOrders() {
       await loadProducts()
     } catch (err) {
       console.error(err)
-      setError(err.message || 'Could not delete product.')
+      setError(
+        err.message ||
+          'Could not delete product.',
+      )
     }
   }
 
   async function updateStock(id, stock) {
     try {
-      const res = await fetch(`/api/admin/products/${id}`, {
-        method: 'PUT',
-        headers: {
-          'Content-Type': 'application/json',
+      const res = await fetch(
+        `/api/admin/products/${id}`,
+        {
+          method: 'PUT',
+          headers: {
+            'Content-Type':
+              'application/json',
+          },
+          credentials: 'include',
+          body: JSON.stringify({
+            stock_quantity: Math.max(
+              0,
+              Number(stock) || 0,
+            ),
+          }),
         },
-        credentials: 'include',
-        body: JSON.stringify({
-          stock_quantity: Math.max(0, Number(stock) || 0),
-        }),
-      })
+      )
 
       const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.error || 'Could not update stock.')
+        throw new Error(
+          data.error ||
+            'Could not update stock.',
+        )
       }
 
       await loadProducts()
     } catch (err) {
       console.error(err)
-      setError(err.message || 'Could not update stock.')
+      setError(
+        err.message ||
+          'Could not update stock.',
+      )
     }
   }
 
@@ -435,41 +539,57 @@ export default function AdminOrders() {
     setMessage('')
 
     try {
-      const res = await fetch(`/api/admin/orders/${id}/refund`, {
-        method: 'POST',
-        credentials: 'include',
-      })
+      const res = await fetch(
+        `/api/admin/orders/${id}/refund`,
+        {
+          method: 'POST',
+          credentials: 'include',
+        },
+      )
 
       const data = await res.json()
 
       if (!res.ok) {
-        throw new Error(data.error || 'Refund failed.')
+        throw new Error(
+          data.error || 'Refund failed.',
+        )
       }
 
-      setMessage('Refund request completed.')
+      setMessage(
+        'Refund request completed.',
+      )
 
       await loadOrders()
     } catch (err) {
       console.error(err)
-      setError(err.message || 'Refund failed.')
+      setError(
+        err.message || 'Refund failed.',
+      )
     }
   }
 
-  function getImage(productItem) {
-    if (productItem.image) {
-      return productItem.image
+  function getImage(item) {
+    if (item.image) {
+      return item.image
     }
 
-    if (Array.isArray(productItem.images) && productItem.images.length) {
-      return productItem.images[0]
+    if (
+      Array.isArray(item.images) &&
+      item.images.length
+    ) {
+      return item.images[0]
     }
 
     return ''
   }
 
   function getOrderAmount(order) {
-    if (order.amount_paise != null) {
-      return Number(order.amount_paise)
+    if (
+      order.amount_paise != null
+    ) {
+      return Number(
+        order.amount_paise,
+      )
     }
 
     if (order.amount != null) {
@@ -487,26 +607,25 @@ export default function AdminOrders() {
         <main className="section">
           <div
             className="container"
-            style={{ maxWidth: '480px' }}
+            style={{
+              maxWidth: '480px',
+            }}
           >
-            <div className="card" style={{ padding: '32px' }}>
-              <p
-                style={{
-                  marginBottom: '8px',
-                  textTransform: 'uppercase',
-                  letterSpacing: '2px',
-                  fontSize: '12px',
-                }}
-              >
-                House of Rainbow
+            <div
+              className="card"
+              style={{
+                padding: '32px',
+              }}
+            >
+              <p className="admin-eyebrow">
+                HOUSE OF RAINBOW
               </p>
 
-              <h1 style={{ marginTop: 0 }}>
-                Admin Login
-              </h1>
+              <h1>Admin Login</h1>
 
               <p>
-                Login to manage products, inventory and orders.
+                Login to manage products,
+                inventory and orders.
               </p>
 
               {error && (
@@ -515,14 +634,20 @@ export default function AdminOrders() {
                 </div>
               )}
 
-              <form onSubmit={login} className="form">
+              <form
+                onSubmit={login}
+                className="form"
+              >
                 <label>
                   Admin Password
+
                   <input
                     type="password"
                     value={password}
                     onChange={(event) =>
-                      setPassword(event.target.value)
+                      setPassword(
+                        event.target.value,
+                      )
                     }
                     placeholder="Enter admin password"
                     required
@@ -534,7 +659,9 @@ export default function AdminOrders() {
                   type="submit"
                   disabled={loading}
                 >
-                  {loading ? 'Logging in...' : 'Login'}
+                  {loading
+                    ? 'Logging in...'
+                    : 'Login'}
                 </button>
               </form>
             </div>
@@ -561,8 +688,8 @@ export default function AdminOrders() {
               <h1>Admin Dashboard</h1>
 
               <p>
-                Manage your products, inventory and customer
-                orders.
+                Manage products, inventory
+                and customer orders.
               </p>
             </div>
 
@@ -595,7 +722,9 @@ export default function AdminOrders() {
                   ? 'admin-tab active'
                   : 'admin-tab'
               }
-              onClick={() => setTab('products')}
+              onClick={() =>
+                setTab('products')
+              }
             >
               Products
             </button>
@@ -607,7 +736,9 @@ export default function AdminOrders() {
                   ? 'admin-tab active'
                   : 'admin-tab'
               }
-              onClick={() => setTab('orders')}
+              onClick={() =>
+                setTab('orders')
+              }
             >
               Orders
             </button>
@@ -625,8 +756,9 @@ export default function AdminOrders() {
                     </h2>
 
                     <p>
-                      Add product details and choose the correct
-                      category.
+                      Add product details,
+                      category and up to 4
+                      images.
                     </p>
                   </div>
 
@@ -634,7 +766,9 @@ export default function AdminOrders() {
                     <button
                       type="button"
                       className="ghost-btn"
-                      onClick={resetProductForm}
+                      onClick={
+                        resetProductForm
+                      }
                     >
                       Cancel Edit
                     </button>
@@ -648,10 +782,13 @@ export default function AdminOrders() {
                   <div className="admin-form-grid">
                     <label>
                       Product Name
+
                       <input
                         name="name"
                         value={product.name}
-                        onChange={updateField}
+                        onChange={
+                          updateField
+                        }
                         placeholder="Example: Korean Earrings"
                         required
                       />
@@ -659,36 +796,46 @@ export default function AdminOrders() {
 
                     <label>
                       Category
+
                       <select
                         name="category"
-                        value={product.category}
-                        onChange={updateField}
+                        value={
+                          product.category
+                        }
+                        onChange={
+                          updateField
+                        }
                         required
                       >
                         <option value="">
                           Select Category
                         </option>
 
-                        {CATEGORIES.map((category) => (
-                          <option
-                            key={category}
-                            value={category}
-                          >
-                            {category}
-                          </option>
-                        ))}
+                        {CATEGORIES.map(
+                          (category) => (
+                            <option
+                              key={category}
+                              value={category}
+                            >
+                              {category}
+                            </option>
+                          ),
+                        )}
                       </select>
                     </label>
 
                     <label>
                       Price (₹)
+
                       <input
                         name="price"
                         type="number"
                         min="1"
                         step="0.01"
                         value={product.price}
-                        onChange={updateField}
+                        onChange={
+                          updateField
+                        }
                         placeholder="299"
                         required
                       />
@@ -696,12 +843,17 @@ export default function AdminOrders() {
 
                     <label>
                       Stock Quantity
+
                       <input
                         name="stock_quantity"
                         type="number"
                         min="0"
-                        value={product.stock_quantity}
-                        onChange={updateField}
+                        value={
+                          product.stock_quantity
+                        }
+                        onChange={
+                          updateField
+                        }
                         placeholder="10"
                       />
                     </label>
@@ -709,59 +861,82 @@ export default function AdminOrders() {
 
                   <label>
                     Product Images
+
                     <input
                       id="product-images"
                       type="file"
                       accept="image/jpeg,image/png,image/webp"
                       multiple
-                      onChange={handleImageChange}
+                      onChange={
+                        handleImageChange
+                      }
                     />
 
                     <small>
-                      New product: select minimum 4 and maximum
-                      8 images. JPG, PNG or WEBP, max 5MB each.
+                      Add 1 to 4 images.
+                      JPG, PNG or WEBP,
+                      maximum 5MB each.
                     </small>
                   </label>
 
-                  {imageFiles.length > 0 && (
+                  {imageFiles.length >
+                    0 && (
                     <div className="image-preview-grid">
-                      {imageFiles.map((file) => (
-                        <div
-                          className="image-preview"
-                          key={`${file.name}-${file.size}`}
-                        >
-                          <img
-                            src={URL.createObjectURL(file)}
-                            alt={file.name}
-                          />
-                        </div>
-                      ))}
+                      {imageFiles.map(
+                        (file) => (
+                          <div
+                            className="image-preview"
+                            key={`${file.name}-${file.size}`}
+                          >
+                            <img
+                              src={URL.createObjectURL(
+                                file,
+                              )}
+                              alt={file.name}
+                            />
+                          </div>
+                        ),
+                      )}
                     </div>
                   )}
 
-                  {product.images?.length > 0 &&
-                    imageFiles.length === 0 && (
+                  {product.images
+                    ?.length > 0 &&
+                    imageFiles.length ===
+                      0 && (
                       <div className="image-preview-grid">
-                        {product.images.map((image, index) => (
-                          <div
-                            className="image-preview"
-                            key={`${image}-${index}`}
-                          >
-                            <img
-                              src={image}
-                              alt={`${product.name} ${index + 1}`}
-                            />
-                          </div>
-                        ))}
+                        {product.images.map(
+                          (
+                            image,
+                            index,
+                          ) => (
+                            <div
+                              className="image-preview"
+                              key={`${image}-${index}`}
+                            >
+                              <img
+                                src={image}
+                                alt={`${product.name} ${
+                                  index + 1
+                                }`}
+                              />
+                            </div>
+                          ),
+                        )}
                       </div>
                     )}
 
                   <label>
                     Description
+
                     <textarea
                       name="description"
-                      value={product.description}
-                      onChange={updateField}
+                      value={
+                        product.description
+                      }
+                      onChange={
+                        updateField
+                      }
                       placeholder="Write a short product description..."
                       rows="5"
                     />
@@ -771,12 +946,17 @@ export default function AdminOrders() {
                     <input
                       type="checkbox"
                       name="featured"
-                      checked={product.featured}
-                      onChange={updateField}
+                      checked={
+                        product.featured
+                      }
+                      onChange={
+                        updateField
+                      }
                     />
 
                     <span>
-                      Show this product as Featured
+                      Show this product as
+                      Featured
                     </span>
                   </label>
 
@@ -796,7 +976,9 @@ export default function AdminOrders() {
                     <button
                       type="button"
                       className="ghost-btn"
-                      onClick={resetProductForm}
+                      onClick={
+                        resetProductForm
+                      }
                     >
                       Clear
                     </button>
@@ -807,14 +989,20 @@ export default function AdminOrders() {
               <section className="admin-card">
                 <div className="admin-card-header">
                   <div>
-                    <h2>Product Inventory</h2>
+                    <h2>
+                      Product Inventory
+                    </h2>
+
                     <p>
-                      {products.length} products in your store.
+                      {products.length}{' '}
+                      products in your
+                      store.
                     </p>
                   </div>
                 </div>
 
-                {products.length === 0 ? (
+                {products.length ===
+                0 ? (
                   <div className="admin-empty">
                     No products found.
                   </div>
@@ -823,107 +1011,156 @@ export default function AdminOrders() {
                     <table>
                       <thead>
                         <tr>
-                          <th>Product</th>
-                          <th>Category</th>
+                          <th>
+                            Product
+                          </th>
+                          <th>
+                            Category
+                          </th>
                           <th>Price</th>
                           <th>Stock</th>
-                          <th>Featured</th>
-                          <th>Actions</th>
+                          <th>
+                            Featured
+                          </th>
+                          <th>
+                            Actions
+                          </th>
                         </tr>
                       </thead>
 
                       <tbody>
-                        {products.map((item) => (
-                          <tr key={item.id}>
-                            <td>
-                              <div className="admin-product-cell">
-                                {getImage(item) ? (
-                                  <img
-                                    src={getImage(item)}
-                                    alt={item.name}
-                                  />
-                                ) : (
-                                  <div className="admin-no-image">
-                                    No image
-                                  </div>
+                        {products.map(
+                          (item) => (
+                            <tr
+                              key={item.id}
+                            >
+                              <td>
+                                <div className="admin-product-cell">
+                                  {getImage(
+                                    item,
+                                  ) ? (
+                                    <img
+                                      src={getImage(
+                                        item,
+                                      )}
+                                      alt={
+                                        item.name
+                                      }
+                                    />
+                                  ) : (
+                                    <div className="admin-no-image">
+                                      No image
+                                    </div>
+                                  )}
+
+                                  <strong>
+                                    {
+                                      item.name
+                                    }
+                                  </strong>
+                                </div>
+                              </td>
+
+                              <td>
+                                <span className="badge">
+                                  {item.category ||
+                                    '—'}
+                                </span>
+                              </td>
+
+                              <td>
+                                {formatInr(
+                                  item.price_paise ||
+                                    Number(
+                                      item.price ||
+                                        0,
+                                    ) *
+                                      100,
                                 )}
+                              </td>
 
-                                <strong>{item.name}</strong>
-                              </div>
-                            </td>
-
-                            <td>
-                              <span className="badge">
-                                {item.category || '—'}
-                              </span>
-                            </td>
-
-                            <td>
-                              {formatInr(
-                                item.price_paise ||
-                                  Number(item.price || 0) * 100,
-                              )}
-                            </td>
-
-                            <td>
-                              <input
-                                className="stock-input"
-                                type="number"
-                                min="0"
-                                value={
-                                  item.stock_quantity ?? 0
-                                }
-                                onChange={(event) =>
-                                  setProducts((current) =>
-                                    current.map((productItem) =>
-                                      productItem.id === item.id
-                                        ? {
-                                            ...productItem,
-                                            stock_quantity:
-                                              event.target.value,
-                                          }
-                                        : productItem,
-                                    ),
-                                  )
-                                }
-                                onBlur={(event) =>
-                                  updateStock(
-                                    item.id,
-                                    event.target.value,
-                                  )
-                                }
-                              />
-                            </td>
-
-                            <td>
-                              {item.featured ? 'Yes' : 'No'}
-                            </td>
-
-                            <td>
-                              <div className="admin-action-buttons">
-                                <button
-                                  type="button"
-                                  className="ghost-btn small"
-                                  onClick={() =>
-                                    editProduct(item)
+                              <td>
+                                <input
+                                  className="stock-input"
+                                  type="number"
+                                  min="0"
+                                  value={
+                                    item.stock_quantity ??
+                                    0
                                   }
-                                >
-                                  Edit
-                                </button>
-
-                                <button
-                                  type="button"
-                                  className="danger-btn"
-                                  onClick={() =>
-                                    deleteProduct(item.id)
+                                  onChange={(
+                                    event,
+                                  ) =>
+                                    setProducts(
+                                      (
+                                        current,
+                                      ) =>
+                                        current.map(
+                                          (
+                                            productItem,
+                                          ) =>
+                                            productItem.id ===
+                                            item.id
+                                              ? {
+                                                  ...productItem,
+                                                  stock_quantity:
+                                                    event
+                                                      .target
+                                                      .value,
+                                                }
+                                              : productItem,
+                                        ),
+                                    )
                                   }
-                                >
-                                  Delete
-                                </button>
-                              </div>
-                            </td>
-                          </tr>
-                        ))}
+                                  onBlur={(
+                                    event,
+                                  ) =>
+                                    updateStock(
+                                      item.id,
+                                      event
+                                        .target
+                                        .value,
+                                    )
+                                  }
+                                />
+                              </td>
+
+                              <td>
+                                {item.featured
+                                  ? 'Yes'
+                                  : 'No'}
+                              </td>
+
+                              <td>
+                                <div className="admin-action-buttons">
+                                  <button
+                                    type="button"
+                                    className="ghost-btn small"
+                                    onClick={() =>
+                                      editProduct(
+                                        item,
+                                      )
+                                    }
+                                  >
+                                    Edit
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    className="danger-btn"
+                                    onClick={() =>
+                                      deleteProduct(
+                                        item.id,
+                                      )
+                                    }
+                                  >
+                                    Delete
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          ),
+                        )}
                       </tbody>
                     </table>
                   </div>
@@ -936,15 +1173,19 @@ export default function AdminOrders() {
             <section className="admin-card">
               <div className="admin-card-header">
                 <div>
-                  <h2>Orders & Payments</h2>
+                  <h2>
+                    Orders & Payments
+                  </h2>
 
                   <p>
-                    View customer orders and payment details.
+                    View customer orders
+                    and payment details.
                   </p>
                 </div>
               </div>
 
-              {orders.length === 0 ? (
+              {orders.length ===
+              0 ? (
                 <div className="admin-empty">
                   No orders found.
                 </div>
@@ -953,8 +1194,12 @@ export default function AdminOrders() {
                   <table>
                     <thead>
                       <tr>
-                        <th>Order ID</th>
-                        <th>Customer</th>
+                        <th>
+                          Order ID
+                        </th>
+                        <th>
+                          Customer
+                        </th>
                         <th>Amount</th>
                         <th>Status</th>
                         <th>Payment</th>
@@ -963,65 +1208,75 @@ export default function AdminOrders() {
                     </thead>
 
                     <tbody>
-                      {orders.map((order) => (
-                        <tr key={order.id}>
-                          <td>
-                            <strong>
-                              {order.order_id ||
-                                order.id}
-                            </strong>
-                          </td>
+                      {orders.map(
+                        (order) => (
+                          <tr
+                            key={order.id}
+                          >
+                            <td>
+                              <strong>
+                                {order.order_id ||
+                                  order.id}
+                              </strong>
+                            </td>
 
-                          <td>
-                            <div>
-                              {order.customer_name ||
-                                order.name ||
+                            <td>
+                              <div>
+                                {order.customer_name ||
+                                  order.name ||
+                                  '—'}
+                              </div>
+
+                              <small>
+                                {order.customer_email ||
+                                  order.email ||
+                                  ''}
+                              </small>
+                            </td>
+
+                            <td>
+                              {formatInr(
+                                getOrderAmount(
+                                  order,
+                                ),
+                              )}
+                            </td>
+
+                            <td>
+                              <span className="badge">
+                                {order.status ||
+                                  '—'}
+                              </span>
+                            </td>
+
+                            <td>
+                              {order.payment_status ||
+                                order.paymentStatus ||
                                 '—'}
-                            </div>
+                            </td>
 
-                            <small>
-                              {order.customer_email ||
-                                order.email ||
-                                ''}
-                            </small>
-                          </td>
-
-                          <td>
-                            {formatInr(
-                              getOrderAmount(order),
-                            )}
-                          </td>
-
-                          <td>
-                            <span className="badge">
-                              {order.status || '—'}
-                            </span>
-                          </td>
-
-                          <td>
-                            {order.payment_status ||
-                              order.paymentStatus ||
-                              '—'}
-                          </td>
-
-                          <td>
-                            <button
-                              type="button"
-                              className="danger-btn"
-                              onClick={() =>
-                                refundOrder(order.id)
-                              }
-                              disabled={
-                                order.status === 'refunded' ||
-                                order.payment_status ===
-                                  'refunded'
-                              }
-                            >
-                              Refund
-                            </button>
-                          </td>
-                        </tr>
-                      ))}
+                            <td>
+                              <button
+                                type="button"
+                                className="danger-btn"
+                                onClick={() =>
+                                  refundOrder(
+                                    order.id,
+                                  )
+                                }
+                                disabled={
+                                  order.status ===
+                                    'refunded' ||
+                                  order.payment_status ===
+                                    'refunded'
+                                }
+                              >
+                                Refund
+                              </button>
+                            </td>
+                          </tr>
+                        ),
+                      )}
                     </tbody>
                   </table>
                 </div>
@@ -1213,8 +1468,9 @@ export default function AdminOrders() {
 
         .image-preview-grid {
           display: grid;
-          grid-template-columns: repeat(8, 1fr);
-          gap: 10px;
+          grid-template-columns: repeat(4, 1fr);
+          gap: 12px;
+          max-width: 520px;
         }
 
         .image-preview {
@@ -1222,6 +1478,7 @@ export default function AdminOrders() {
           border-radius: 10px;
           overflow: hidden;
           background: #f2eee8;
+          border: 1px solid #e6ddd2;
         }
 
         .image-preview img {
@@ -1278,7 +1535,8 @@ export default function AdminOrders() {
           }
 
           .image-preview-grid {
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(2, 1fr);
+            max-width: 100%;
           }
 
           .admin-card {
