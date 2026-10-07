@@ -469,10 +469,10 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
   const price = Number(price_paise)
   const stock = Number(stock_quantity)
 
-  if (!Number.isSafeInteger(price) || price <= 0) {
+  if (!Number.isFinite(price) || price <= 0) {
     return res.status(400).json({
-      error: 'Enter a valid price in paise',
-    })
+      error: 'Enter a valid price',
+    });
   }
 
   if (!Number.isSafeInteger(stock) || stock < 0) {
