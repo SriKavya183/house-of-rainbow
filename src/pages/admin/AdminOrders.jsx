@@ -318,7 +318,10 @@ export default function AdminOrders() {
     setProduct({
       name: productItem.name || "",
       description: productItem.description || "",
-      price: productItem.price ?? "",
+      price:
+  productItem.price_paise != null
+    ? Number(productItem.price_paise) / 100
+    : "",
       category: productItem.category || "Earrings",
       stock_quantity: productItem.stock_quantity ?? 0,
       featured: Boolean(productItem.featured),
@@ -455,16 +458,23 @@ export default function AdminOrders() {
 
       const finalImages = [...existingImages, ...uploadedImages].slice(0, 4);
 
-      const payload = {
-        name: product.name.trim(),
-        description: product.description.trim(),
-        price: Number(product.price),
-        category: product.category,
-        stock_quantity: Number(product.stock_quantity) || 0,
-        featured: Boolean(product.featured),
-        image: finalImages[0] || "",
-        images: finalImages,
-      };
+      const priceRupees = Number(product.price);
+
+const payload = {
+  name: product.name.trim(),
+  description: product.description.trim(),
+
+  // Admin enters ₹299
+  // Backend stores 29900 paise
+  price_paise: Math.round(priceRupees * 100),
+
+  category: product.category,
+  stock_quantity: Number(product.stock_quantity) || 0,
+  featured: Boolean(product.featured),
+
+  image: finalImages[0] || "",
+  images: finalImages,
+};
 
       const url = editingId
         ? `${API}/admin/products/${editingId}`
