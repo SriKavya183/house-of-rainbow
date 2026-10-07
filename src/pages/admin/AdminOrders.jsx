@@ -4,10 +4,16 @@ const API = "/api";
 
 const CATEGORIES = [
   "Earrings",
+  "Necklaces",
+  "Bracelets",
+  "Rings",
+  "Oxidised Jewellery",
+  "Anti-Tarnish Jewellery",
+  "Jewellery Sets",
   "Hair Accessories",
   "Hair Clips",
-  "Jewellery",
   "Bangles",
+  "Ethnic / Traditional",
   "Gift Hampers",
 ];
 
