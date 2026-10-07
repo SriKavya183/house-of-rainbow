@@ -10,6 +10,36 @@ const CATEGORIES = [
       'https://images.unsplash.com/photo-1535632066927-ab7c9ab60908?auto=format&fit=crop&w=700&q=80',
   },
   {
+    name: 'Necklaces',
+    image:
+      'https://images.unsplash.com/photo-1601121141461-9d7917fa2f54?auto=format&fit=crop&w=700&q=80',
+  },
+  {
+    name: 'Bracelets',
+    image:
+      'https://images.unsplash.com/photo-1611652022419-a73b6dcd47c7?auto=format&fit=crop&w=700&q=80',
+  },
+  {
+    name: 'Rings',
+    image:
+      'https://images.unsplash.com/photo-1605100804763-247f67b3557e?auto=format&fit=crop&w=700&q=80',
+  },
+  {
+    name: 'Oxidised Jewellery',
+    image:
+      'https://images.unsplash.com/photo-1630019852942-f89202989a59?auto=format&fit=crop&w=700&q=80',
+  },
+  {
+    name: 'Anti-Tarnish Jewellery',
+    image:
+      'https://images.unsplash.com/photo-1599643478518-a784e5dc4c8f?auto=format&fit=crop&w=700&q=80',
+  },
+  {
+    name: 'Jewellery Sets',
+    image:
+      'https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=700&q=80',
+  },
+  {
     name: 'Hair Accessories',
     image:
       'https://images.unsplash.com/photo-1522337360788-8b13dee7a37e?auto=format&fit=crop&w=700&q=80',
@@ -20,21 +50,21 @@ const CATEGORIES = [
       'https://images.unsplash.com/photo-1596462502278-27bfdc403348?auto=format&fit=crop&w=700&q=80',
   },
   {
-    name: 'Jewellery',
-    image:
-      'https://images.unsplash.com/photo-1515562141207-7a88fb7ce338?auto=format&fit=crop&w=700&q=80',
-  },
-  {
     name: 'Bangles',
     image:
       'https://images.unsplash.com/photo-1611591437281-460bfbe1220a?auto=format&fit=crop&w=700&q=80',
+  },
+  {
+    name: 'Ethnic / Traditional',
+    image:
+      'https://images.unsplash.com/photo-1601121141461-9d7917fa2f54?auto=format&fit=crop&w=700&q=80',
   },
   {
     name: 'Gift Hampers',
     image:
       'https://images.unsplash.com/photo-1549465220-1a8b9238cd48?auto=format&fit=crop&w=700&q=80',
   },
-]
+];
 
 export default function Home({ products = [] }) {
   const { addItem } = useCart()
