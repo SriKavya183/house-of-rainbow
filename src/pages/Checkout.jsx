@@ -1,3 +1,4 @@
+import { apiUrl } from '../api.js'
 import { useState } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import Navbar from '../components/Navbar.jsx'
@@ -49,7 +50,7 @@ export default function Checkout() {
     }
     setBusy(true)
     try {
-      const orderRes = await fetch('/api/orders', {
+      const orderRes = await fetch(apiUrl('/api/orders'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -67,7 +68,7 @@ export default function Checkout() {
         return
       }
 
-      const payRes = await fetch('/api/payments/create-order', {
+      const payRes = await fetch(apiUrl('/api/payments/create-order'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ orderId: order.id }),
@@ -99,7 +100,7 @@ export default function Checkout() {
           wallet: true,
         },
         handler: async (response) => {
-          const verifyRes = await fetch('/api/payments/verify', {
+          const verifyRes = await fetch(apiUrl('/api/payments/verify'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -119,7 +120,7 @@ export default function Checkout() {
         },
         modal: {
           ondismiss: async () => {
-            await fetch('/api/payments/mark-status', {
+            await fetch(apiUrl('/api/payments/mark-status'), {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ orderId: order.id, status: 'pending' }),
@@ -130,7 +131,7 @@ export default function Checkout() {
       })
 
       checkout.on('payment.failed', async () => {
-        await fetch('/api/payments/mark-status', {
+        await fetch(apiUrl('/api/payments/mark-status'), {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ orderId: order.id, status: 'failed' }),

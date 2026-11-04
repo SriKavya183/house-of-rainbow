@@ -1,3 +1,4 @@
+import { apiUrl } from '../api.js'
 import { useEffect, useState } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import Home from './pages/Home.jsx'
@@ -15,7 +16,7 @@ export default function App() {
   const [products, setProducts] = useState([])
 
   useEffect(() => {
-    fetch('/api/products')
+    fetch(apiUrl('/api/products'))
       .then((res) => res.json())
       .then(setProducts)
       .catch(() => setProducts([]))

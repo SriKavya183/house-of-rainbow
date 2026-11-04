@@ -1,3 +1,4 @@
+import { apiUrl } from '../api.js'
 import { useEffect, useState } from 'react'
 
 export function useStoreConfig() {
@@ -10,7 +11,7 @@ export function useStoreConfig() {
   })
 
   useEffect(() => {
-    fetch('/api/config')
+    fetch(apiUrl('/api/config'))
       .then((res) => res.json())
       .then(setConfig)
       .catch(() => {})

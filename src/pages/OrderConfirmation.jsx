@@ -1,3 +1,4 @@
+import { apiUrl } from '../api.js'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import Navbar from '../components/Navbar.jsx'
@@ -18,7 +19,7 @@ export default function OrderConfirmation() {
   const [error, setError] = useState('')
 
   useEffect(() => {
-    fetch(`/api/orders/${encodeURIComponent(orderId)}`)
+    fetch(apiUrl(`/api/orders/${encodeURIComponent(orderId)}`))
       .then(async (res) => {
         const data = await res.json()
         if (!res.ok) throw new Error(data.error)

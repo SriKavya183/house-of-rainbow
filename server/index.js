@@ -7,6 +7,8 @@ import cors from 'cors'
 import cookieParser from 'cookie-parser'
 import dotenv from 'dotenv'
 import multer from 'multer'
+import { createClient } from '@supabase/supabase-js'
+import { initDatabase } from './db.js'
 import {
   createProduct,
   updateProduct,
@@ -26,44 +28,12 @@ dotenv.config()
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const app = express()
-const uploadsDir = path.join(__dirname, '..', 'public', 'uploads')
-
-fs.mkdirSync(uploadsDir, { recursive: true })
-
-const storage = multer.diskStorage({
-  destination: (_req, _file, cb) => {
-    cb(null, uploadsDir)
-  },
-
-  filename: (_req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase()
-    const filename = `${crypto.randomUUID()}${ext}`
-
-    cb(null, filename)
-  },
-})
-
+const supabase = createClient(process.env.SUPABASE_URL || 'https://placeholder.supabase.co', process.env.SUPABASE_SECRET_KEY || 'placeholder')
 const upload = multer({
-  storage,
-
-  limits: {
-    fileSize: 5 * 1024 * 1024,
-    files: 8,
-  },
-
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 4 },
   fileFilter: (_req, file, cb) => {
-    const allowedTypes = [
-      'image/jpeg',
-      'image/png',
-      'image/webp',
-    ]
-
-    if (!allowedTypes.includes(file.mimetype)) {
-      return cb(
-        new Error('Only JPG, PNG and WEBP images are allowed'),
-      )
-    }
-
+    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.mimetype)) return cb(new Error('Only JPG, PNG and WEBP images are allowed'))
     cb(null, true)
   },
 })
@@ -72,7 +42,7 @@ const adminSessions = new Map()
 
 app.use(
   cors({
-    origin: ['http://localhost:5173', 'http://127.0.0.1:5173'],
+    origin: (process.env.FRONTEND_URL || 'http://localhost:5173').split(',').map((x) => x.trim()),
     credentials: true,
   }),
 )
@@ -84,7 +54,7 @@ app.use(
   }),
 )
 app.use(cookieParser())
-app.use('/uploads', express.static(uploadsDir))
+
 function nowId() {
   const stamp = Date.now().toString(36).toUpperCase()
   const rand = crypto.randomBytes(3).toString('hex').toUpperCase()
@@ -131,23 +101,28 @@ app.post(
   '/api/admin/upload',
   requireAdmin,
   upload.array('images', 4),
-  (req, res) => {
+  async (req, res) => {
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({
         error: 'Please select at least one image',
       })
     }
 
-    const images = req.files.map(
-      (file) => `/uploads/${file.filename}`,
-    )
-
-    res.json({
-      images,
-    })
+    if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SECRET_KEY) return res.status(503).json({ error: 'Supabase Storage is not configured on the server' })
+    try {
+      const images = []
+      for (const file of req.files) {
+        const ext = path.extname(file.originalname).toLowerCase() || '.jpg'
+        const objectPath = `products/${Date.now()}-${crypto.randomUUID()}${ext}`
+        const { error } = await supabase.storage.from('product-images').upload(objectPath, file.buffer, { contentType: file.mimetype, upsert: false })
+        if (error) throw error
+        images.push(supabase.storage.from('product-images').getPublicUrl(objectPath).data.publicUrl)
+      }
+      res.json({ images })
+    } catch (error) { res.status(500).json({ error: error.message || 'Image upload failed' }) }
   },
 )
-app.get('/api/config', (_req, res) => {
+app.get('/api/config', async (_req, res) => {
   const configured = isRazorpayConfigured()
   const mode = getRazorpayMode()
   const liveReady = configured && mode === 'live' && (process.env.RAZORPAY_KEY_ID || '').startsWith('rzp_live_')
@@ -161,19 +136,19 @@ app.get('/api/config', (_req, res) => {
   })
 })
 
-app.get('/api/products', (req, res) => {
+app.get('/api/products', async (req, res) => {
   const category = req.query.category
   const featured = req.query.featured === '1' || req.query.featured === 'true'
-  res.json(listProducts({ category, featured }))
+  res.json(await listProducts({ category, featured }))
 })
 
-app.get('/api/products/:id', (req, res) => {
-  const product = getProduct(req.params.id)
+app.get('/api/products/:id', async (req, res) => {
+  const product = await getProduct(req.params.id)
   if (!product) return res.status(404).json({ error: 'Product not found' })
   res.json(product)
 })
 
-app.post('/api/orders', (req, res) => {
+app.post('/api/orders', async (req, res) => {
   const {
     customer_name,
     customer_email,
@@ -199,7 +174,7 @@ app.post('/api/orders', (req, res) => {
   const lineItems = []
   let amount_paise = 0
   for (const item of items) {
-    const product = getProduct(item.product_id)
+    const product = await getProduct(item.product_id)
     if (!product) return res.status(400).json({ error: `Unknown product ${item.product_id}` })
     const quantity = Math.max(1, Number(item.quantity) || 1)
     amount_paise += product.price_paise * quantity
@@ -213,7 +188,7 @@ app.post('/api/orders', (req, res) => {
   }
 
   const payment_status = payment_method === 'cod' ? 'pending_cod' : 'pending'
-  const order = createOrder({
+  const order = await createOrder({
     id: nowId(),
     customer_name,
     customer_email,
@@ -231,15 +206,15 @@ app.post('/api/orders', (req, res) => {
   res.status(201).json(publicOrder(order))
 })
 
-app.get('/api/orders/:id', (req, res) => {
-  const order = getOrder(req.params.id)
+app.get('/api/orders/:id', async (req, res) => {
+  const order = await getOrder(req.params.id)
   if (!order) return res.status(404).json({ error: 'Order not found' })
   res.json(publicOrder(order))
 })
 
 app.post('/api/payments/create-order', async (req, res) => {
   const { orderId } = req.body || {}
-  const order = getOrder(orderId)
+  const order = await getOrder(orderId)
   if (!order) return res.status(404).json({ error: 'Order not found' })
   if (order.payment_method !== 'razorpay') {
     return res.status(400).json({ error: 'This order is Cash on Delivery' })
@@ -259,12 +234,12 @@ app.post('/api/payments/create-order', async (req, res) => {
       receipt: order.id,
       notes: { store_order_id: order.id },
     })
-    updateLatestPayment(order.id, {
+    await updateLatestPayment(order.id, {
       status: 'pending',
       razorpay_order_id: rzpOrder.id,
       raw_json: JSON.stringify(rzpOrder),
     })
-    updateOrderStatus(order.id, 'pending')
+    await updateOrderStatus(order.id, 'pending')
     res.json({
       keyId: getPublicKeyId(),
       razorpayOrderId: rzpOrder.id,
@@ -274,22 +249,22 @@ app.post('/api/payments/create-order', async (req, res) => {
       mode: getRazorpayMode(),
     })
   } catch (err) {
-    updateOrderStatus(order.id, 'failed')
-    updateLatestPayment(order.id, { status: 'failed', raw_json: JSON.stringify({ message: err.message }) })
+    await updateOrderStatus(order.id, 'failed')
+    await updateLatestPayment(order.id, { status: 'failed', raw_json: JSON.stringify({ message: err.message }) })
     res.status(502).json({ error: 'Could not create Razorpay order. Check test keys and try again.' })
   }
 })
 
-app.post('/api/payments/verify', (req, res) => {
+app.post('/api/payments/verify', async (req, res) => {
   const { orderId, razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body || {}
-  const order = getOrder(orderId)
+  const order = await getOrder(orderId)
   if (!order) return res.status(404).json({ error: 'Order not found' })
   if (!isRazorpayConfigured()) {
     return res.status(503).json({ error: 'Razorpay is not configured' })
   }
   if (!razorpay_order_id || !razorpay_payment_id || !razorpay_signature) {
-    updateOrderStatus(order.id, 'failed')
-    updateLatestPayment(order.id, { status: 'failed' })
+    await updateOrderStatus(order.id, 'failed')
+    await updateLatestPayment(order.id, { status: 'failed' })
     return res.status(400).json({ error: 'Missing payment details', payment_status: 'failed' })
   }
 
@@ -299,8 +274,8 @@ app.post('/api/payments/verify', (req, res) => {
     .digest('hex')
 
   if (expected !== razorpay_signature) {
-    updateOrderStatus(order.id, 'failed')
-    updateLatestPayment(order.id, {
+    await updateOrderStatus(order.id, 'failed')
+    await updateLatestPayment(order.id, {
       status: 'failed',
       razorpay_order_id,
       razorpay_payment_id,
@@ -309,19 +284,19 @@ app.post('/api/payments/verify', (req, res) => {
     return res.status(400).json({ error: 'Payment signature mismatch', payment_status: 'failed' })
   }
 
-  updateOrderStatus(order.id, 'paid')
-  updateLatestPayment(order.id, {
+  await updateOrderStatus(order.id, 'paid')
+  await updateLatestPayment(order.id, {
     status: 'paid',
     razorpay_order_id,
     razorpay_payment_id,
     razorpay_signature,
   })
-  res.json({ ok: true, payment_status: 'paid', order: publicOrder(getOrder(order.id)) })
+  res.json({ ok: true, payment_status: 'paid', order: publicOrder(await getOrder(order.id)) })
 })
 
-app.post('/api/payments/mark-status', (req, res) => {
+app.post('/api/payments/mark-status', async (req, res) => {
   const { orderId, status } = req.body || {}
-  const order = getOrder(orderId)
+  const order = await getOrder(orderId)
   if (!order) return res.status(404).json({ error: 'Order not found' })
   if (!['failed', 'pending'].includes(status)) {
     return res.status(400).json({ error: 'Invalid status' })
@@ -329,12 +304,12 @@ app.post('/api/payments/mark-status', (req, res) => {
   if (order.payment_status === 'paid' || order.payment_status === 'refunded') {
     return res.json(publicOrder(order))
   }
-  updateOrderStatus(order.id, status)
-  updateLatestPayment(order.id, { status })
-  res.json(publicOrder(getOrder(order.id)))
+  await updateOrderStatus(order.id, status)
+  await updateLatestPayment(order.id, { status })
+  res.json(publicOrder(await getOrder(order.id)))
 })
 
-app.post('/api/payments/webhook', (req, res) => {
+app.post('/api/payments/webhook', async (req, res) => {
   const secret = process.env.RAZORPAY_WEBHOOK_SECRET
   if (!secret) {
     return res.status(503).json({ error: 'Webhook secret not set' })
@@ -351,30 +326,30 @@ app.post('/api/payments/webhook', (req, res) => {
   const razorpayOrderId = paymentEntity?.order_id
   if (!razorpayOrderId) return res.json({ ok: true })
 
-  const order = findOrderByRazorpayOrderId(razorpayOrderId)
+  const order = await findOrderByRazorpayOrderId(razorpayOrderId)
   if (!order) return res.json({ ok: true })
 
   if (event === 'payment.captured') {
-    updateOrderStatus(order.id, 'paid')
-    updateLatestPayment(order.id, {
+    await updateOrderStatus(order.id, 'paid')
+    await updateLatestPayment(order.id, {
       status: 'paid',
       razorpay_payment_id: paymentEntity.id,
       raw_json: JSON.stringify(req.body),
     })
   } else if (event === 'payment.failed') {
     if (order.payment_status !== 'paid') {
-      updateOrderStatus(order.id, 'failed')
-      updateLatestPayment(order.id, { status: 'failed', raw_json: JSON.stringify(req.body) })
+      await updateOrderStatus(order.id, 'failed')
+      await updateLatestPayment(order.id, { status: 'failed', raw_json: JSON.stringify(req.body) })
     }
   } else if (event === 'order.paid') {
-    updateOrderStatus(order.id, 'paid')
-    updateLatestPayment(order.id, { status: 'paid', raw_json: JSON.stringify(req.body) })
+    await updateOrderStatus(order.id, 'paid')
+    await updateLatestPayment(order.id, { status: 'paid', raw_json: JSON.stringify(req.body) })
   }
 
   res.json({ ok: true })
 })
 
-app.post('/api/admin/login', (req, res) => {
+app.post('/api/admin/login', async (req, res) => {
   const password = req.body?.password
   if (!password || password !== process.env.ADMIN_PASSWORD) {
     return res.status(401).json({ error: 'Incorrect password' })
@@ -383,36 +358,37 @@ app.post('/api/admin/login', (req, res) => {
   adminSessions.set(token, Date.now())
   res.cookie('hor_admin', token, {
     httpOnly: true,
-    sameSite: 'lax',
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax',
+    secure: process.env.NODE_ENV === 'production',
     maxAge: 1000 * 60 * 60 * 12,
   })
   res.json({ ok: true })
 })
 
-app.post('/api/admin/logout', (req, res) => {
+app.post('/api/admin/logout', async (req, res) => {
   const token = req.cookies.hor_admin
   if (token) adminSessions.delete(token)
-  res.clearCookie('hor_admin')
+  res.clearCookie('hor_admin', { sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', secure: process.env.NODE_ENV === 'production' })
   res.json({ ok: true })
 })
 
-app.get('/api/admin/session', (req, res) => {
+app.get('/api/admin/session', async (req, res) => {
   const token = req.cookies.hor_admin
   res.json({ authenticated: Boolean(token && adminSessions.has(token)) })
 })
 
-app.get('/api/admin/orders', requireAdmin, (_req, res) => {
-  res.json(listOrders().map(publicOrder))
+app.get('/api/admin/orders', requireAdmin, async (_req, res) => {
+  res.json((await listOrders()).map(publicOrder))
 })
 
 app.post('/api/admin/orders/:id/refund', requireAdmin, async (req, res) => {
-  const order = getOrder(req.params.id)
+  const order = await getOrder(req.params.id)
   if (!order) return res.status(404).json({ error: 'Order not found' })
 
   if (order.payment_method === 'cod') {
-    updateOrderStatus(order.id, 'refunded')
-    updateLatestPayment(order.id, { status: 'refunded' })
-    return res.json(publicOrder(getOrder(order.id)))
+    await updateOrderStatus(order.id, 'refunded')
+    await updateLatestPayment(order.id, { status: 'refunded' })
+    return res.json(publicOrder(await getOrder(order.id)))
   }
 
   const paymentId = order.payments?.[0]?.razorpay_payment_id
@@ -429,13 +405,13 @@ app.post('/api/admin/orders/:id/refund', requireAdmin, async (req, res) => {
       amount: order.amount_paise,
       notes: { store_order_id: order.id },
     })
-    updateOrderStatus(order.id, 'refunded')
-    updateLatestPayment(order.id, {
+    await updateOrderStatus(order.id, 'refunded')
+    await updateLatestPayment(order.id, {
       status: 'refunded',
       razorpay_refund_id: refund.id,
       raw_json: JSON.stringify(refund),
     })
-    res.json(publicOrder(getOrder(order.id)))
+    res.json(publicOrder(await getOrder(order.id)))
   } catch (err) {
     res.status(502).json({ error: err.error?.description || err.message || 'Refund failed' })
   }
@@ -444,12 +420,12 @@ app.post('/api/admin/orders/:id/refund', requireAdmin, async (req, res) => {
 // ADMIN PRODUCT MANAGEMENT
 
 // Get all products (admin)
-app.get('/api/admin/products', requireAdmin, (_req, res) => {
-  res.json(listProducts())
+app.get('/api/admin/products', requireAdmin, async (_req, res) => {
+  res.json(await listProducts())
 })
 
 // Add a new product
-app.post('/api/admin/products', requireAdmin, (req, res) => {
+app.post('/api/admin/products', requireAdmin, async (req, res) => {
   const {
     name,
     category,
@@ -482,7 +458,7 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
   }
 
   try {
-    const product = createProduct({
+    const product = await createProduct({
       id: `PRD-${crypto.randomBytes(6).toString('hex').toUpperCase()}`,
       name: name.trim(),
       category: category.trim(),
@@ -500,8 +476,8 @@ app.post('/api/admin/products', requireAdmin, (req, res) => {
 })
 
 // Update an existing product
-app.put('/api/admin/products/:id', requireAdmin, (req, res) => {
-  const existing = getProduct(req.params.id)
+app.put('/api/admin/products/:id', requireAdmin, async (req, res) => {
+  const existing = await getProduct(req.params.id)
 
   if (!existing) {
     return res.status(404).json({ error: 'Product not found' })
@@ -554,23 +530,23 @@ app.put('/api/admin/products/:id', requireAdmin, (req, res) => {
   if (featured !== undefined) updates.featured = featured ? 1 : 0
 
   try {
-    updateProduct(req.params.id, updates)
-    res.json(getProduct(req.params.id))
+    await updateProduct(req.params.id, updates)
+    res.json(await getProduct(req.params.id))
   } catch (err) {
     res.status(400).json({ error: err.message })
   }
 })
 
 // Delete a product
-app.delete('/api/admin/products/:id', requireAdmin, (req, res) => {
-  const existing = getProduct(req.params.id)
+app.delete('/api/admin/products/:id', requireAdmin, async (req, res) => {
+  const existing = await getProduct(req.params.id)
 
   if (!existing) {
     return res.status(404).json({ error: 'Product not found' })
   }
 
   try {
-    deleteProduct(req.params.id)
+    await deleteProduct(req.params.id)
     res.json({ ok: true, message: 'Product deleted' })
   } catch (err) {
     res.status(400).json({ error: err.message })
@@ -585,7 +561,9 @@ if (fs.existsSync(distDir)) {
   })
 }
 
-app.listen(PORT, () => {
-  console.log(`House of Rainbow API on http://127.0.0.1:${PORT}`)
-  console.log(`Razorpay configured: ${isRazorpayConfigured()} (mode: ${getRazorpayMode()})`)
-})
+initDatabase().then(() => {
+  app.listen(PORT, () => {
+    console.log(`House of Rainbow API on port ${PORT}`)
+    console.log(`Razorpay configured: ${isRazorpayConfigured()} (mode: ${getRazorpayMode()})`)
+  })
+}).catch((err) => { console.error('Database initialization failed:', err); process.exit(1) })
